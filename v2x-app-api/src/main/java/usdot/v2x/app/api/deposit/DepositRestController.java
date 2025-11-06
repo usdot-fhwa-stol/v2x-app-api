@@ -79,29 +79,25 @@ public class DepositRestController {
                 // Convert the configuration request to Geofence deployment request
                 GeofenceDeploymentRequest geofenceRequest = geofenceDeploymentConverter
                         .convertToGeofenceDeploymentRequest(request);
-            } else {
-                throw new ErrorResponseException(
-                        new ErrorResponse("INVALID_DEPOSIT_MODE", "Invalid deposit mode"),
-                        HttpStatus.UNPROCESSABLE_ENTITY);
+
+                // Enforce maximum geohashes per deployment
+                int maxGeohashes = geofenceProperties.getLimits().getMaxGeohashes();
+                if (geofenceRequest.getGeohashes() != null && geofenceRequest.getGeohashes().size() > maxGeohashes) {
+                    ErrorResponse errorResponse = new ErrorResponse(
+                            "GEOFENCE_TOO_LARGE",
+                            "Deposit rejected: exceeds maximum allowed geohashes (" + maxGeohashes + ")");
+                    return ResponseEntity.status(413).body(errorResponse);
+                }
+
+                // Create the Geofence deployment
+                GeofenceDeploymentResponse response = geofenceDeploymentService
+                        .createGeofenceDeployment(geofenceRequest);
+
+                return ResponseEntity.ok(response);
             }
 
-            // Convert the configuration request to Geofence deployment request
-            GeofenceDeploymentRequest geofenceRequest = geofenceDeploymentConverter
-                    .convertToGeofenceDeploymentRequest(request);
-
-            // Enforce maximum geohashes per deployment
-            int maxGeohashes = geofenceProperties.getLimits().getMaxGeohashes();
-            if (geofenceRequest.getGeohashes() != null && geofenceRequest.getGeohashes().size() > maxGeohashes) {
-                ErrorResponse errorResponse = new ErrorResponse(
-                        "GEOFENCE_TOO_LARGE",
-                        "Deposit rejected: exceeds maximum allowed geohashes (" + maxGeohashes + ")");
-                return ResponseEntity.status(413).body(errorResponse);
-            }
-
-            // Create the Geofence deployment
-            GeofenceDeploymentResponse response = geofenceDeploymentService.createGeofenceDeployment(geofenceRequest);
-
-            return ResponseEntity.ok(response);
+            ErrorResponse errorResponse = new ErrorResponse("INVALID_DEPOSIT_MODE", "Invalid deposit mode");
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(errorResponse);
         } catch (ErrorResponseException ex) {
             log.error("An error response exception occurred while processing the request: {}", ex.getMessage(), ex);
             return ResponseEntity.status(ex.getStatusCode()).body(ex.getErrorResponse());

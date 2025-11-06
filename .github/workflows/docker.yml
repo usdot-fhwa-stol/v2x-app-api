@@ -1,0 +1,20 @@
+name: Docker build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    
+
+jobs:
+  docker-app-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
