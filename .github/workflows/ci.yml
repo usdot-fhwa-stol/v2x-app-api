@@ -28,7 +28,4 @@ jobs:
           distribution: 'temurin'
           java-version: '22'
           cache: 'gradle'
-          cache-dependency-path: | # optional
-            sub-project/*.gradle*
-            sub-project/**/gradle-wrapper.properties
       - run: cd ./v2x-app-api && ./gradlew build --no-daemon
