@@ -18,8 +18,8 @@ COPY ./jpo-asn-pojos/jpo-asn-j2735-2024/src ./jpo-asn-pojos/jpo-asn-j2735-2024/s
 RUN cd jpo-asn-pojos/jpo-asn-j2735-2024 && gradle clean build -x test
 
 # j2735-2024-ffm-lib files
-COPY ./j2735-2024-ffm-lib/j2735-2024-ffm-lib/src /home/app/j2735-2024-ffm-lib/j2735-2024-ffm-lib/src
-COPY ./j2735-2024-ffm-lib/j2735-2024-ffm-lib/build.gradle /home/app/j2735-2024-ffm-lib/j2735-2024-ffm-lib
+COPY ./j2735-ffm-java/j2735-2024-ffm-lib/src /home/app/j2735-ffm-java/j2735-2024-ffm-lib/src
+COPY ./j2735-ffm-java/j2735-2024-ffm-lib/build.gradle /home/app/j2735-ffm-java/j2735-2024-ffm-lib
 
 # Copy Partner API files
 COPY ./v2x-app-api/build.gradle ./v2x-app-api/settings.gradle ./v2x-app-api/
@@ -36,7 +36,7 @@ FROM eclipse-temurin:22-jdk-noble
 WORKDIR /home/app
 
 # Install native library
-COPY ./j2735-2024-ffm-lib/lib/libasnapplication.so /usr/lib/
+COPY ./j2735-ffm-java/lib/libasnapplication.so /usr/lib/
 
 # Copy the built application and dependencies
 COPY --from=builder /home/app/v2x-app-api/build/libs/*.jar ./app.jar
