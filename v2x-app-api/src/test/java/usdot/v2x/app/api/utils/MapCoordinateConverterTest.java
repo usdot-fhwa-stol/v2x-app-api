@@ -31,7 +31,7 @@ class MapCoordinateConverterTest {
     public void testMapCoordinateConversion_SingleIntersection() throws Exception {
         JsonNode sampleMap = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/SingleIntersectionMAP.json"));
+                        "/usdot/v2x/app/api/utils/SingleIntersectionMAP.json"));
 
         MapDataMessageFrame messageFrame = objectMapper.readValue(sampleMap.toString(),
                 MapDataMessageFrame.class);
@@ -61,7 +61,7 @@ class MapCoordinateConverterTest {
     public void testMapCoordinateConversion_MultiIntersection() throws Exception {
         JsonNode sampleMap = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/MultiIntersectionMAP.json"));
+                        "/usdot/v2x/app/api/utils/MultiIntersectionMAP.json"));
 
         MapDataMessageFrame messageFrame = objectMapper.readValue(sampleMap.toString(),
                 MapDataMessageFrame.class);

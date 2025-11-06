@@ -56,13 +56,13 @@ Run the application in the dev profile:
 
 This partner api has 3 rest controllers:
 
-1. [Registration/Connection](./src/main/java/com/neaera/cvmec/api/etx/registration/RegistrationRestController.java)
+1. [Registration/Connection](./src/main/java/usdot/v2x/app/api/etx/registration/RegistrationRestController.java)
    - This rest controller hosts ETX endpoints for registration and connection
-2. [Configuration](./src/main/java/com/neaera/cvmec/api/etx/configuration/ConfigurationRestController.java)
+2. [Configuration](./src/main/java/usdot/v2x/app/api/etx/configuration/ConfigurationRestController.java)
    - This rest controller hosts ETX geofence endpoints for managing TIMs
-3. [Authentication](./src/main/java/com/neaera/cvmec/api/keycloak/KeycloakRestController.java)
+3. [Authentication](./src/main/java/usdot/v2x/app/api/keycloak/KeycloakRestController.java)
    - This rest controller hosts api authentication endpoints - mainly a token login endpoint, enabling keycloak token generation
-4. [Decode](./src/main/java/com/neaera/cvmec/api/decode/DecodeRestController.java)
+4. [Decode](./src/main/java/usdot/v2x/app/api/decode/DecodeRestController.java)
    - This rest controller hosts ASN.1 decode endpoints for decoding messages
 
 ## Authentication

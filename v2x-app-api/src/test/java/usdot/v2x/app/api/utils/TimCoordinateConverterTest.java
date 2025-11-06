@@ -34,7 +34,7 @@ class TimCoordinateConverterTest {
     public void testOffsetPathCoordinateConversion_SingleRegion() throws Exception {
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/SingleRegionPathOffsetTIM.json"));
+                        "/usdot/v2x/app/api/utils/SingleRegionPathOffsetTIM.json"));
 
         TravelerInformationMessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(),
                 TravelerInformationMessageFrame.class);
@@ -64,7 +64,7 @@ class TimCoordinateConverterTest {
     public void testOffsetPathCoordinateConversion_MultipleRegions() throws Exception {
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/MultiRegionPathOffsetTIM.json"));
+                        "/usdot/v2x/app/api/utils/MultiRegionPathOffsetTIM.json"));
 
         TravelerInformationMessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(),
                 TravelerInformationMessageFrame.class);
@@ -100,7 +100,7 @@ class TimCoordinateConverterTest {
     public void testOffsetPathCoordinateConversion_SingleRegionCircle() throws Exception {
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/SingleRegionCircleTIM.json"));
+                        "/usdot/v2x/app/api/utils/SingleRegionCircleTIM.json"));
 
         TravelerInformationMessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(),
                 TravelerInformationMessageFrame.class);
@@ -130,7 +130,7 @@ class TimCoordinateConverterTest {
     public void testOffsetPathCoordinateConversion_MultipleDataFrames() throws Exception {
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/MultiDataFrameOffsetTim.json"));
+                        "/usdot/v2x/app/api/utils/MultiDataFrameOffsetTim.json"));
 
         TravelerInformationMessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(),
                 TravelerInformationMessageFrame.class);
@@ -165,7 +165,7 @@ class TimCoordinateConverterTest {
     public void testClosedPathCoordinateConversion() throws Exception {
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/utils/ClosedPathTim.json"));
+                        "/usdot/v2x/app/api/utils/ClosedPathTim.json"));
 
         TravelerInformationMessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(),
                 TravelerInformationMessageFrame.class);

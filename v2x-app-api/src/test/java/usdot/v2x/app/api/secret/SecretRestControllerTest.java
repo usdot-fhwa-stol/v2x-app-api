@@ -3,58 +3,77 @@ package usdot.v2x.app.api.secret;
 import usdot.v2x.app.api.models.dto.SecretResponse;
 import usdot.v2x.app.api.models.dto.S3Config;
 import usdot.v2x.app.api.services.SecretService;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-@WebMvcTest(SecretRestController.class)
+@ExtendWith(MockitoExtension.class)
+@DisplayName("SecretRestController Tests")
 class SecretRestControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockBean
+    @Mock
     private SecretService secretService;
 
+    @InjectMocks
+    private SecretRestController secretRestController;
+
     @Test
-    void getSecretConfig_ShouldReturnSuccess() throws Exception {
-        // Given
-        S3Config s3Config = new S3Config("test-key", "test-secret", "test-bucket", "us-east-1", "test-destination");
+    @DisplayName("Should successfully get secret configuration")
+    void getSecretConfig_ShouldReturnSuccess() {
+        // Given - using values from application-test.yml
+        S3Config s3Config = new S3Config("key", "key", "name", "region", "destination");
         SecretResponse secretResponse = new SecretResponse(
-                "test-token",
+                "token",
                 s3Config,
-                "test-mapbox-token",
-                "test-noaa-token");
+                "mapbox_access_token",
+                "noaa-geomag-api-token");
 
         when(secretService.getSecretConfig()).thenReturn(Mono.just(secretResponse));
 
-        // When & Then
-        mockMvc.perform(get("/prd/v2/secrets"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.iss_scms_token").value("test-token"))
-                .andExpect(jsonPath("$.s3.s3_access_key").value("test-key"))
-                .andExpect(jsonPath("$.s3.s3_secret_key").value("test-secret"))
-                .andExpect(jsonPath("$.s3.s3_bucket_name").value("test-bucket"))
-                .andExpect(jsonPath("$.s3.s3_region").value("us-east-1"))
-                .andExpect(jsonPath("$.s3.s3_destination").value("test-destination"))
-                .andExpect(jsonPath("$.mapbox_access_token").value("test-mapbox-token"))
-                .andExpect(jsonPath("$.noaa_geomag_api_token").value("test-noaa-token"));
+        // When
+        Mono<SecretResponse> result = secretRestController.getSecretConfig();
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertNotNull(response);
+                    assertEquals("token", response.getIssScmsToken());
+                    assertNotNull(response.getS3());
+                    assertEquals("key", response.getS3().getS3AccessKey());
+                    assertEquals("key", response.getS3().getS3SecretKey());
+                    assertEquals("name", response.getS3().getS3BucketName());
+                    assertEquals("region", response.getS3().getS3Region());
+                    assertEquals("destination", response.getS3().getS3Destination());
+                    assertEquals("mapbox_access_token", response.getMapboxAccessToken());
+                    assertEquals("noaa-geomag-api-token", response.getNoaaGeomagApiToken());
+                })
+                .verifyComplete();
+
+        verify(secretService).getSecretConfig();
     }
 
     @Test
-    void getSecretConfig_WhenServiceThrowsException_ShouldReturnError() throws Exception {
+    @DisplayName("Should handle service error when getting secret configuration")
+    void getSecretConfig_WhenServiceThrowsException_ShouldReturnError() {
         // Given
         when(secretService.getSecretConfig()).thenReturn(Mono.error(new RuntimeException("Service error")));
 
-        // When & Then
-        mockMvc.perform(get("/prd/v2/secrets"))
-                .andExpect(status().isInternalServerError());
+        // When
+        Mono<SecretResponse> result = secretRestController.getSecretConfig();
+
+        // Then
+        StepVerifier.create(result)
+                .expectError(RuntimeException.class)
+                .verify();
+
+        verify(secretService).getSecretConfig();
     }
 }

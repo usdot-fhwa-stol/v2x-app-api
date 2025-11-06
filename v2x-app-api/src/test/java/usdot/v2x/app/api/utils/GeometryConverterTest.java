@@ -109,7 +109,7 @@ public class GeometryConverterTest {
         org.locationtech.jts.geom.Polygon jtsPolygon = geometryFactory.createPolygon(ring);
 
         // Create a GeofenceFeature using the helper
-        GeofenceFeature feature = GeofenceFeatureHelper.createFeature("Feature", jtsPolygon, null);
+        GeofenceFeature feature = GeofenceFeatureHelper.createFeature("Feature", jtsPolygon, new HashMap<>());
 
         // Verify the feature was created correctly
         assertNotNull(feature);

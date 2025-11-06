@@ -115,15 +115,15 @@ webclient:
       multiplier: 2.0
 
 secret:
-  iss-scms-token: ${ISS_SCMS_TOKEN:token}
+  iss-scms-token: token
   s3:
-    access-key: ${S3_ACCESS_KEY:key}
-    secret-key: ${S3_SECRET_KEY:key}
-    bucket-name: ${S3_BUCKET_NAME:name}
-    region: ${S3_REGION:region}
-    destination: ${S3_DESTINATION:destination}
-  mapbox-access-token: ${MAPBOX_ACCESS_TOKEN:mapbox_access_token}
-  noaa-geomag-api-token: ${NOAA_GEOMAG_API_TOKEN:noaa-geomag-api-token}
+    access-key: key
+    secret-key: key
+    bucket-name: name
+    region: region
+    destination: destination
+  mapbox-access-token: mapbox_access_token
+  noaa-geomag-api-token: noaa-geomag-api-token
 
 # Spring Boot Actuator Configuration for Request Monitoring
 management:

@@ -20,7 +20,7 @@ public class ConnectionResponseTest {
         String expectedJson = new String(
                 Files.readAllBytes(
                         Paths.get(
-                                "src/test/resources/com/neaera/cvmec/api/etx/registration/ConnectionResponse.json")));
+                                "src/test/resources/usdot/v2x/app/api/etx/registration/ConnectionResponse.json")));
         ObjectMapper objectMapper = new ObjectMapper();
         // JavaTimeModule
 

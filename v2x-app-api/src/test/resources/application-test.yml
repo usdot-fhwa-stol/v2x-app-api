@@ -20,3 +20,14 @@ logging:
     usdot.v2x.app.api: DEBUG
     org.springframework.security: DEBUG
     org.springframework.web: DEBUG
+
+secret:
+  iss-scms-token: ${ISS_SCMS_TOKEN:token}
+  s3:
+    access-key: ${S3_ACCESS_KEY:key}
+    secret-key: ${S3_SECRET_KEY:key}
+    bucket-name: ${S3_BUCKET_NAME:name}
+    region: ${S3_REGION:region}
+    destination: ${S3_DESTINATION:destination}
+  mapbox-access-token: ${MAPBOX_ACCESS_TOKEN:mapbox_access_token}
+  noaa-geomag-api-token: ${NOAA_GEOMAG_API_TOKEN:noaa-geomag-api-token}

@@ -22,7 +22,7 @@ public class ConfigurationGeofenceResponseTest {
         String expectedJson = new String(
                 Files.readAllBytes(
                         Paths.get(
-                                "src/test/resources/com/neaera/cvmec/api/etx/configuration/ConfigurationResponse.json")));
+                                "src/test/resources/usdot/v2x/app/api/etx/configuration/ConfigurationResponse.json")));
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.setSerializationInclusion(Include.NON_NULL);
         objectMapper.registerModule(new JtsModule());

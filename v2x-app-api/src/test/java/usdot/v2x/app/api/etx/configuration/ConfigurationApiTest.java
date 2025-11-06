@@ -15,7 +15,6 @@ import usdot.v2x.app.api.models.etx.configuration.geofence.DistributionType;
 import usdot.v2x.app.api.utils.TimCoordinateConverter;
 import usdot.v2x.app.api.utils.MapCoordinateConverter;
 import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.GeometryFactory;
 
@@ -128,6 +127,9 @@ public class ConfigurationApiTest {
     @Mock
     private Clock clock;
 
+    @Mock
+    private EtxProperties.Configuration configuration;
+
     @BeforeEach
     public void setUp() {
         MockitoAnnotations.openMocks(this);
@@ -145,6 +147,8 @@ public class ConfigurationApiTest {
         when(etxProperties.getUsername()).thenReturn("test-username");
         when(etxProperties.getPassword()).thenReturn("test-password");
         when(etxProperties.getEndpoint()).thenReturn("http://localhost:8080");
+        when(etxProperties.getConfiguration()).thenReturn(configuration);
+        when(configuration.getDistributionType()).thenReturn(DistributionType.Targeted);
 
         // Mock TokenService
         when(tokenService.getTokenStore()).thenReturn(Mono.just(tokenStore));
@@ -296,7 +300,7 @@ public class ConfigurationApiTest {
         // Load test configuration from JSON file
         ConfigurationGeofence geofence = objectMapper.readValue(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"),
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"),
                 ConfigurationGeofence.class);
         ConfigurationGeofenceResponse expectedResponse = new ConfigurationGeofenceResponse();
 
@@ -330,7 +334,7 @@ public class ConfigurationApiTest {
         JsonNode actualJson = objectMapper.readTree(bodyCaptor.getValue());
         JsonNode expectedJson = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"));
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"));
 
         assertThat(actualJson, jsonEquals(expectedJson)
                 .withTolerance(0.0001));
@@ -341,7 +345,7 @@ public class ConfigurationApiTest {
         // Load test configuration from JSON file
         ConfigurationGeofence geofence = objectMapper.readValue(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"),
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"),
                 ConfigurationGeofence.class);
         ErrorResponse errorResponse = new ErrorResponse("error", "description");
 
@@ -375,7 +379,7 @@ public class ConfigurationApiTest {
         JsonNode actualJson = objectMapper.readTree(bodyCaptor.getValue());
         JsonNode expectedJson = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"));
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"));
 
         assertThat(actualJson, jsonEquals(expectedJson)
                 .withTolerance(0.0001));
@@ -386,7 +390,7 @@ public class ConfigurationApiTest {
         // Load test configuration from JSON file
         ConfigurationGeofence geofence = objectMapper.readValue(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"),
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"),
                 ConfigurationGeofence.class);
         ConfigurationGeofenceResponse expectedResponse = new ConfigurationGeofenceResponse();
 
@@ -425,7 +429,7 @@ public class ConfigurationApiTest {
         JsonNode actualJson = objectMapper.readTree(bodyCaptor.getValue());
         JsonNode expectedJson = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"));
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"));
 
         assertThat(actualJson, jsonEquals(expectedJson)
                 .withTolerance(0.0001));
@@ -436,7 +440,7 @@ public class ConfigurationApiTest {
         // Load test configuration from JSON file
         ConfigurationGeofence geofence = objectMapper.readValue(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"),
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"),
                 ConfigurationGeofence.class);
         ErrorResponse errorResponse = new ErrorResponse("error", "description");
 
@@ -477,7 +481,7 @@ public class ConfigurationApiTest {
         JsonNode actualJson = objectMapper.readTree(bodyCaptor.getValue());
         JsonNode expectedJson = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/Configuration.json"));
+                        "/usdot/v2x/app/api/etx/configuration/Configuration.json"));
 
         assertThat(actualJson, jsonEquals(expectedJson)
                 .withTolerance(0.0001));
@@ -555,7 +559,7 @@ public class ConfigurationApiTest {
         // Load sample TIM from JSON file
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/SampleDecodedTim.json"));
+                        "/usdot/v2x/app/api/etx/configuration/SampleDecodedTim.json"));
 
         // Mock codec behavior to return the sample TIM as XML
         // Convert JSON to XML for the mock
@@ -665,7 +669,7 @@ public class ConfigurationApiTest {
         // Load sample TIM from JSON file
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/SampleDecodedTim.json"));
+                        "/usdot/v2x/app/api/etx/configuration/SampleDecodedTim.json"));
 
         // Mock codec behavior to return the sample TIM as XML
         // Convert JSON to XML for the mock
@@ -824,7 +828,7 @@ public class ConfigurationApiTest {
         // Load sample TIM from JSON file
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/SampleTim.json"));
+                        "/usdot/v2x/app/api/etx/configuration/SampleTim.json"));
 
         // Mock codec behavior to return the sample TIM as XML
         // Convert JSON to XML for the mock
@@ -849,7 +853,7 @@ public class ConfigurationApiTest {
         // Load sample TIM from JSON file
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/SampleTim.json"));
+                        "/usdot/v2x/app/api/etx/configuration/SampleTim.json"));
 
         // Mock codec behavior to return the sample TIM as XML
         // Convert JSON to XML for the mock
@@ -891,7 +895,7 @@ public class ConfigurationApiTest {
         // Load sample MAP message from JSON file
         JsonNode sampleMap = objectMapper.readTree(
                 getClass().getResourceAsStream(
-                        "/com/neaera/cvmec/api/etx/configuration/SampleMap.json"));
+                        "/usdot/v2x/app/api/etx/configuration/SampleMap.json"));
 
         // Mock codec behavior to return the sample MAP as XML
         // Convert JSON to XML for the mock

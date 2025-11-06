@@ -20,7 +20,7 @@ public class RegistrationResponseTest {
         String expectedJson = new String(
                 Files.readAllBytes(
                         Paths.get(
-                                "src/test/resources/com/neaera/cvmec/api/etx/registration/RegistrationResponse.json")));
+                                "src/test/resources/usdot/v2x/app/api/etx/registration/RegistrationResponse.json")));
         ObjectMapper objectMapper = new ObjectMapper();
         // JavaTimeModule
 

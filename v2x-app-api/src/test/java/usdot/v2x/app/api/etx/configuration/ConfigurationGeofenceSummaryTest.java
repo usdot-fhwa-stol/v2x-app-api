@@ -20,7 +20,7 @@ public class ConfigurationGeofenceSummaryTest {
         String expectedJson = new String(
                 Files.readAllBytes(
                         Paths.get(
-                                "src/test/resources/com/neaera/cvmec/api/etx/configuration/ConfigurationSummary.json")));
+                                "src/test/resources/usdot/v2x/app/api/etx/configuration/ConfigurationSummary.json")));
         ObjectMapper objectMapper = new ObjectMapper();
         // JavaTimeModule
 

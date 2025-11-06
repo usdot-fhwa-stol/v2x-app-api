@@ -21,7 +21,7 @@ public class ConfigurationGeofenceTest {
         // Load sample JSON data
         String expectedJson = new String(
                 Files.readAllBytes(
-                        Paths.get("src/test/resources/com/neaera/cvmec/api/etx/configuration/Configuration.json")));
+                        Paths.get("src/test/resources/usdot/v2x/app/api/etx/configuration/Configuration.json")));
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.setSerializationInclusion(Include.NON_NULL);
         objectMapper.registerModule(new JtsModule());
