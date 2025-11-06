@@ -1,0 +1,145 @@
+deposit:
+  mode: ${DEPOSIT_MODE:API}
+etx:
+  endpoint: ${ETX_ENDPOINT}
+  vendorId: ${ETX_VENDOR_ID}
+  depositorVendorId: ${ETX_DEPOSITOR_VENDOR_ID:${ETX_VENDOR_ID}}
+  username: ${ETX_VENDOR_USERNAME}
+  password: ${ETX_VENDOR_PASSWORD}
+
+  registration:
+    vendors:
+      - id: ${ETX_VENDOR_ID}
+        limit: ${ETX_VENDOR_REGISTRATION_LIMIT:50}
+        user-limit: ${ETX_VENDOR_USER_REGISTRATION_LIMIT:5}
+      - id: ${ETX_DEPOSITOR_VENDOR_ID:${ETX_VENDOR_ID}}
+        limit: ${ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT:10}
+        user-limit: ${ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT:3}
+  configuration:
+    distribution-type: ${ETX_CONFIGURATION_DISTRIBUTION_TYPE:Targeted}
+    cleanup:
+      enabled: ${GEOFENCE_CLEANUP_ENABLED:false}
+      interval-minutes: ${GEOFENCE_CLEANUP_INTERVAL_MINUTES:5}
+thingspace:
+  endpoint: ${THINGSPACE_ENDPOINT}
+  key: ${THINGSPACE_KEY}
+  secret: ${THINGSPACE_SECRET}
+  sessionTokenLifespanMinutes: ${TOKEN_EXPIRATION_MINUTES:10}
+  tokenPeriodicRegenerationEnabled: ${TOKEN_PERIODIC_REGENERATION:true}
+keycloak:
+  realm: ${KEYCLOAK_REALM}
+  clientId: ${KEYCLOAK_CLIENT_NAME}
+  clientSecret: ${KEYCLOAK_CLIENT_SECRET}
+  endpoint: ${KEYCLOAK_ENDPOINT}
+geometry:
+  geofence-offset-meters: ${GEOFENCE_OFFSET_METERS:50.0}
+  default-lane-width-cm: ${DEFAULT_LANE_WIDTH_CM:1500.0}
+j2735.codec:
+  text-buffer-size: 262144
+  uper-buffer-size: 8192
+  error-buffer-size: 256
+  library-path: /usr/lib/libasnapplication.so
+  windows-library-path: C:/temp/asnapplication.dll
+tim:
+  config.file.path: ${TIM_CONFIG_FILE_PATH:/tim_config_files/tim-config.json}
+  icons.directory: ${TIM_ICONS_DIRECTORY:/tim_config_files/tim-icons}
+geofence:
+  geohash:
+    precision: ${GEOFENCE_GEOHASH_PRECISION:7}
+  limits:
+    max-geohashes: ${GEOFENCE_LIMITS_MAX_GEOHASHES:500}
+  expiration:
+    cleanup:
+      enabled: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:true}
+      interval-minutes: ${GEOFENCE_EXPIRATION_CLEANUP_INTERVAL_MINUTES:5}
+    grace-period-hours: ${TIM_EXPIRATION_GRACE_PERIOD_HOURS:2}
+
+# Database Configuration
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/v2x_app_db}
+    username: ${POSTGRES_USER:admin_user}
+    password: ${POSTGRES_PASSWORD:change_me_123}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    show-sql: ${SPRING_JPA_SHOW_SQL:false}
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  web:
+    resources:
+      add-mappings: false
+  security:
+    oauth2:
+      client:
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ENDPOINT}/realms/${KEYCLOAK_REALM}
+            user-name-attribute: "preferred_username"
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ENDPOINT}/realms/${KEYCLOAK_REALM}
+          jwk-set-uri: ${KEYCLOAK_ENDPOINT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs
+cors: "*"
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  # Configure async request timeout (default is 30 seconds)
+  servlet:
+    session:
+      timeout: 5m
+  # Configure async request timeout for long-running operations
+  async:
+    request-timeout: 300000 # 5 minutes in milliseconds
+
+# OpenAPI Configuration
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+# WebClient Configuration for Resilience
+webclient:
+  timeout:
+    connect: ${WEB_CLIENT_CONNECT_TIMEOUT:5000}
+    read: ${WEB_CLIENT_READ_TIMEOUT:30000}
+    write: ${WEB_CLIENT_WRITE_TIMEOUT:10000}
+  retry:
+    max-attempts: ${WEB_CLIENT_RETRY_MAX_ATTEMPTS:3}
+    backoff:
+      initial-delay: ${WEB_CLIENT_RETRY_INITIAL_DELAY:1000}
+      max-delay: ${WEB_CLIENT_RETRY_MAX_DELAY:10000}
+      multiplier: 2.0
+
+secret:
+  iss-scms-token: ${ISS_SCMS_TOKEN:token}
+  s3:
+    access-key: ${S3_ACCESS_KEY:key}
+    secret-key: ${S3_SECRET_KEY:key}
+    bucket-name: ${S3_BUCKET_NAME:name}
+    region: ${S3_REGION:region}
+    destination: ${S3_DESTINATION:destination}
+  mapbox-access-token: ${MAPBOX_ACCESS_TOKEN:mapbox_access_token}
+  noaa-geomag-api-token: ${NOAA_GEOMAG_API_TOKEN:noaa-geomag-api-token}
+
+# Spring Boot Actuator Configuration for Request Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: ALWAYS
+      show-components: ALWAYS
+    prometheus:
+      access: read-only
+
+logging:
+  level:
+    root: INFO
+    usdot.v2x.app.api: ${API_LOGGING_LEVEL:DEBUG}

@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Java V2X App API",
+      "type": "java",
+      "request": "launch",
+      "mainClass": "usdot.v2x.app.api.V2XAppApiApplication",
+      "projectName": "v2x-app-api",
+      "envFile": "${workspaceFolder}/.env",
+      "vmArgs": "--enable-native-access=ALL-UNNAMED",
+      "preLaunchTask": "run-keycloak"
+    }
+  ]
+}

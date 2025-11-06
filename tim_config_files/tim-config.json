@@ -1,0 +1,385 @@
+{
+    "version": "1.0.0",
+    "tims":[
+        {
+            "name": "closed-to-traffic, local-traffic, only",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["769","9478","7747"],
+            "graphic":"closed_to_traffic.png"
+        },
+        {
+            "name": "traffic-congestion, ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["263","13569"],
+            "graphic":"traffic_congestion_ahead.png"
+        },
+        {
+            "name": "incident, ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["531","13569"],
+            "graphic":"incident_ahead.png"
+        },
+        {
+            "name": "accident, ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["513","13569"],
+            "graphic":"accident_ahead.png"
+        },
+        {
+            "name": "alert, left-lane, blocked-ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "8195", "776"],
+            "graphic":"left_lane_blocked.png"
+        },
+        {
+            "name": "alert, left-lane, <small_number>, lanes, blocked-ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "13580", "*", "13588", "776"],
+            "graphic":"left_lane_blocked.png"
+        },
+        {
+            "name": "alert, right-lane, blocked-ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "8196", "776"],
+            "graphic":"right_lane_blocked.png"
+        },
+        {
+            "name": "alert, right-lane, <small_number>, lanes, blocked-ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "13579", "#", "13588", "776"],
+            "graphic":"right_lane_blocked.png"
+        },
+        
+        
+        {
+            "name": "caution-high-winds",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "[5123,5124,5126,5127,5128,5129,5131]"],
+            "graphic":"caution_high_winds.png"
+        },
+        {
+            "name": "strong-winds, truck-restrictions, no-high-profile-vehicles, below, gross-weight-limit, <number>, pounds",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["5127", "2563", "2569", "7682", "2577", "#", "8739" ],
+            "graphic":"wind_closure.png",
+            "overlays":[
+                {
+                    "majorFontSize": 30,
+                    "minorFontSize": 24,
+                    "xPos": 20,
+                    "yPos": 220
+                }
+            ]
+        },
+        {
+            "name": "wrong-way",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["12310"],
+            "graphic":"wrong_way.png"
+        },
+        {
+            "name": "hurricane, evacuation-route",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["5122","8468"],
+            "graphic":"hurricane_evacuation_route.png"
+        },
+        {
+            "name": "alert, visibility reduced",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "5383"],
+            "graphic":"caution_reduced_visibility.png"
+        },
+        {
+            "name": "alert, dense-fog ahead",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "5377", "13569"],
+            "graphic":"caution_reduced_visibility.png"
+        },
+        {
+            "name": "be-prepared-to-stop",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["7201"],
+            "graphic":"be_prepared_to_stop.png"
+        },
+        {
+            "name": "alert, <traffic condition> be-prepared-to-stop",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["6916", "[257,258,260,262,263]", "7201"],
+            "graphic":"alert_be_prepared_to_stop.png"
+        },
+        {
+            "name": "debris-on-roadway",
+            "source": "guidance",
+            "type": "advisory",
+            "codes": ["1284"],
+            "graphic":"caution_debris_on_roadway.png"
+        },
+        {
+            "name": "road-construction, traffic-congestion, ahead ",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["1025", "263", "13569"],
+            "graphic":"slow_traffic_ahead.png"
+        },
+        {
+            "name": "road-construction/construction-work",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["[1025,1028]"],
+            "graphic":"work_zone.png"
+        },
+        {
+            "name": "road-construction/construction-work ahead",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["[1025,1028]","13569"],
+            "graphic":"road_work_ahead.png"
+        },
+        {
+            "name": "left-lane, closed-ahead",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["8195", "771"],
+            "graphic":"left_lane_closed_ahead.png"
+        },
+        {
+            "name": "left, <small number>, lanes, closed-ahead",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["13580", "*", "13588", "771"],
+            "graphic":"left_lane_closed_ahead.png"
+        },
+        {
+            "name": "right-lane, closed-ahead",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["8196", "771"],
+            "graphic":"right_lane_closed_ahead.png"
+        },
+        {
+            "name": "right, <small number>, lanes, closed-ahead",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["13579", "*", "13588", "771"],
+            "graphic":"right_lane_closed_ahead.png"
+        },
+        {
+            "name": "center-lane, closed-ahead",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["8197", "771"],
+            "graphic":"center_lane_closed_ahead.png"
+        },
+        {
+            "name": "closed-to-traffic",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["769"],
+            "graphic":"road_closed.png"
+        },
+        {
+            "name": "closed-for-the-season",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["774"],
+            "graphic":"road_closed.png"
+        },
+        {
+            "name": "look-out-for-workers",
+            "source": "guidance",
+            "type": "workZone",
+            "codes": ["6952"],
+            "graphic":"look_out_for_workers.png"
+        },
+        {
+            "name": "do-not-enter",
+            "source": "guidance",
+            "type": "genericSign",
+            "codes": ["12314"],
+            "graphic":"do_not_enter.png"
+        },
+        {
+            "name": "stop",
+            "source": "guidance",
+            "type": "genericSign",
+            "codes": ["12294"],
+            "graphic":"stop.png"
+        },
+        {
+            "name": "yield",
+            "source": "guidance",
+            "type": "genericSign",
+            "codes": ["12295"],
+            "graphic":"yield.png"
+        },
+        {
+            "name": "Advice, speed limit, <small number>, mph",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["7712", "268", "#", "8720"],
+            "graphic":"advisory_speed_limit_mph.png",
+            "overlays":[
+                {
+                    "majorFontSize": 80,
+                    "minorFontSize": 48,
+                    "xPos": 60,
+                    "yPos": 60
+                }
+            ]
+        },
+        {
+            "name": "Advice, speed limit, <small number>, kph",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["7712", "268", "#", "8721"],
+            "graphic":"advisory_speed_limit_kph.png",
+            "overlays":[
+                {
+                    "majorFontSize": 80,
+                    "minorFontSize": 48,
+                    "xPos": 60,
+                    "yPos": 60
+                }
+            ]
+        },
+        {
+            "name": "speed limit, <small number>, mph/kph",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["268", "#", "[8720,8721]"],
+            "graphic":"speed_limit.png",
+            "overlays":[
+                {
+                    "majorFontSize": 72,
+                    "minorFontSize": 40,
+                    "xPos": 45,
+                    "yPos": 150
+                }
+            ]
+        },
+        {
+            "name": "speed limit, <small number>, mph/kph ahead",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["268", "12302", "#", "[8720,8721]", "13569"],
+            "graphic":"speed_limit_ahead.png",
+            "overlays":[
+                {
+                    "majorFontSize": 44,
+                    "minorFontSize": 32,
+                    "xPos": 96,
+                    "yPos": 136
+                }
+            ]
+        },
+        {
+            "name": "speed limit, trucks, buses, <small number>",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["268", "9227", "9228", "#", "8720"],
+            "graphic":"speed_limit_trucks_buses.png",
+            "overlays":[
+                {
+                    "majorFontSize": 72,
+                    "minorFontSize": 40,
+                    "xPos": 45,
+                    "yPos": 150
+                }
+            ]
+        },
+        {
+            "name": "School zone, speed limit, <small number>, Units, ahead",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["4124", "268", "#", "8720", "13569"],
+            "graphic":"speed_limit_school_zone.png",
+            "overlays":[
+                {
+                    "majorFontSize": 44,
+                    "minorFontSize": 32,
+                    "xPos": 96,
+                    "yPos": 144
+                }
+            ]
+        },
+        {
+            "name": "Speed Limit, Combined <num>, <units> , minimum <num>, <units>",
+            "source": "guidance",
+            "type": "speedLimit",
+            "codes": ["268", "12303", "#", "8720", "12304", "#", "8720"],
+            "graphic":"speed_limit_combined.png",
+            "overlays":[
+                {
+                    "majorFontSize": 48,
+                    "minorFontSize": 36,
+                    "xPos": 20,
+                    "yPos": 95
+                },
+                {
+                    "majorFontSize": 48,
+                    "minorFontSize": 36,
+                    "xPos": 20,
+                    "yPos": 190
+                }
+            ]
+        },
+        {
+            "name": "stop-ahead, toll-plaza",
+            "source": "guidance",
+            "type": "exitService",
+            "codes": ["12294", "13569", "8217"],
+            "graphic":"stop_ahead_pay_toll.png"
+        },
+        {
+            "name": "exit, for, toll-plaza, ahead",
+            "source": "guidance",
+            "type": "exitService",
+            "codes": ["11794", "7721", "8217", "13569"],
+            "graphic":"last_exit_before_toll.png"
+        },
+        {
+            "name": "truck, parking, ahead",
+            "source": "guidance",
+            "type": "exitService",
+            "codes": ["9227", "4120", "13569"],
+            "graphic":"truck_parking_ahead.png"
+        },
+        {
+            "name": "gas, diesel, ahead",
+            "source": "guidance",
+            "type": "exitService",
+            "codes": ["[11016,11015]", "13569"],
+            "graphic":"gas_diesel_ahead.png"
+        },
+        {
+            "name": "weigh-station <num> mile ahead",
+            "source": "guidance",
+            "type": "exitService",
+            "codes": ["11792", "*", "8711", "12569"],
+            "graphic":"weight_station_ahead.png"
+        },
+        {
+            "name": "weigh-station <num> mile ahead",
+            "source": "guidance",
+            "type": "exitService",
+            "codes": ["11792", "892", "13582", "13579"],
+            "graphic":"weight_station_ahead.png"
+        }
+    ]
+}

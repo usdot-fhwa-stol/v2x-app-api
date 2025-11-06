@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "run-keycloak",
+      "type": "docker-compose",
+      "dockerCompose": {
+        "up": {
+          "detached": true,
+          "build": true,
+          "profiles": [
+            "keycloak",
+            "postgres"
+          ],
+          "removeOrphans": true
+        },
+        "files": [
+          "${workspaceFolder}/docker-compose.yml"
+        ],
+        "envFile": "${workspaceFolder}/.env"
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "description": "this is a geofence",
+  "geoFence": {
+    "features": [
+      {
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [-105.09216479999999, 39.624925499999996],
+              [-105.0821648, 39.624925499999996],
+              [-105.0821648, 39.6349255],
+              [-105.09216479999999, 39.6349255],
+              [-105.09216479999999, 39.624925499999996]
+            ]
+          ]
+        },
+        "properties": {},
+        "type": "Feature"
+      }
+    ],
+    "type": "FeatureCollection"
+  },
+  "id": "id",
+  "isActive": true,
+  "messageStandard": "sae",
+  "messages": [
+    {
+      "distributionType": ["Targeted"],
+      "generic": {
+        "messageFormat": "j2735",
+        "messageType": "MAP",
+        "payload": "payload"
+      },
+      "isPrivate": true,
+      "roadUserType": ["Vehicle", "VulnerableRoadUser"],
+      "triggerConditions": ["inside"]
+    }
+  ],
+  "name": "MAP_12103",
+  "vendorId": "vendor"
+}

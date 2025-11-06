@@ -1,0 +1,6 @@
+[submodule "jpo-asn-pojos"]
+	path = jpo-asn-pojos
+	url = https://github.com/usdot-jpo-ode/jpo-asn-pojos.git
+[submodule "j2735-ffm-java"]
+	path = j2735-ffm-java
+	url = https://github.com/usdot-jpo-ode/j2735-ffm-java.git
