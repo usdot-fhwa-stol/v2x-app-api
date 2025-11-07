@@ -31,18 +31,25 @@ jobs:
       - name: Build project
         run: cd v2x-app-api && ./gradlew clean build -x test
 
-      - name: Start Spring Boot app
-        run: |
-          nohup cd v2x-app-api && ./gradlew bootRun &
-          sleep 20
-
       - name: Generate OpenAPI docs
         run: cd v2x-app-api && ./gradlew generateOpenApiDocs
+
+      - name: Verify OpenAPI file exists
+        run: |
+          if [ ! -f docs/v2x-app-api-openapi.json ]; then
+            echo "Error: OpenAPI file was not generated"
+            exit 1
+          fi
+          echo "OpenAPI file generated successfully"
 
       - name: Commit and push updated docs
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add docs/v2x-app-api-openapi.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update Swagger docs"
-          git push
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update Swagger docs"
+            git push
+          fi
