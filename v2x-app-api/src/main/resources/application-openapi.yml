@@ -1,0 +1,3 @@
+etx.enabled: false
+thingspace.enabled: false
+geofence.expiration.cleanup.enabled: false

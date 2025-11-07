@@ -1,6 +1,8 @@
 package usdot.v2x.app.api.etx.configuration;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+
+import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationClearGeofence;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -22,12 +24,16 @@ class GeofenceCleanupServiceTest {
     @Mock
     private ConfigurationApi configurationApi;
 
+    @Mock
+    private EtxProperties etxProperties;
+
     private ConfigurationCleanupService cleanupService;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        cleanupService = new ConfigurationCleanupService(configurationApi);
+        when(etxProperties.getEnabled()).thenReturn(true);
+        cleanupService = new ConfigurationCleanupService(configurationApi, etxProperties);
     }
 
     @Test
@@ -118,6 +124,24 @@ class GeofenceCleanupServiceTest {
 
         try {
             verify(configurationApi, times(1)).clearGeofences(any(ConfigurationClearGeofence.class));
+        } catch (JsonProcessingException e) {
+            fail("Unexpected exception during verification: " + e.getMessage());
+        }
+    }
+
+    @Test
+    void testClearInactiveTimGeofences_WhenEtxDisabled_ShouldSkipCleanup() {
+        // Arrange
+        when(etxProperties.getEnabled()).thenReturn(false);
+        ConfigurationCleanupService disabledCleanupService = new ConfigurationCleanupService(configurationApi,
+                etxProperties);
+
+        // Act
+        disabledCleanupService.clearInactiveTimGeofences();
+
+        // Assert
+        try {
+            verify(configurationApi, never()).clearGeofences(any(ConfigurationClearGeofence.class));
         } catch (JsonProcessingException e) {
             fail("Unexpected exception during verification: " + e.getMessage());
         }

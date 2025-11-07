@@ -58,7 +58,7 @@ services:
     depends_on:
       - postgres
 
-  v2x-api-partner-api:
+  v2x-app-api:
     profiles:
       - v2x-app-api
       - all
@@ -67,35 +67,48 @@ services:
       context: .
     restart: ${RESTART_POLICY:-no}
     environment:
+      # Keycloak configuration
       KEYCLOAK_ENDPOINT: ${KEYCLOAK_ENDPOINT}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       KEYCLOAK_CLIENT_NAME: ${KEYCLOAK_CLIENT_NAME}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+
+      # Thingspace configuration
+      THINGSPACE_ENABLED: ${THINGSPACE_ENABLED:-true}
       THINGSPACE_KEY: ${THINGSPACE_KEY}
       THINGSPACE_SECRET: ${THINGSPACE_SECRET}
       THINGSPACE_ENDPOINT: ${THINGSPACE_ENDPOINT}
       TOKEN_EXPIRATION_MINUTES: ${TOKEN_EXPIRATION_MINUTES:-15}
       TOKEN_PERIODIC_REGENERATION: ${TOKEN_PERIODIC_REGENERATION:-false}
+
+      # ETX configuration
+      ETX_ENABLED: ${ETX_ENABLED:-true}
       ETX_ENDPOINT: ${ETX_ENDPOINT}
       ETX_VENDOR_ID: ${ETX_VENDOR_ID}
       ETX_DEPOSITOR_VENDOR_ID: ${ETX_DEPOSITOR_VENDOR_ID:-${ETX_VENDOR_ID}}
       ETX_VENDOR_USERNAME: ${ETX_VENDOR_USERNAME}
       ETX_VENDOR_PASSWORD: ${ETX_VENDOR_PASSWORD}
-      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-API}
+      # ETX Registration Limits
       ETX_VENDOR_REGISTRATION_LIMIT: ${ETX_VENDOR_REGISTRATION_LIMIT:-50}
       ETX_VENDOR_USER_REGISTRATION_LIMIT: ${ETX_VENDOR_USER_REGISTRATION_LIMIT:-5}
       ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT: ${ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT:-10}
       ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT: ${ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT:-3}
+
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-ETX_CONFIGURATION_API}
+
+      # Geofence configuration
       GEOFENCE_OFFSET_METERS: ${GEOFENCE_OFFSET_METERS:-50.0}
       DEFAULT_LANE_WIDTH_CM: ${DEFAULT_LANE_WIDTH_CM:-1500.0}
       GEOFENCE_CLEANUP_ENABLED: ${GEOFENCE_CLEANUP_ENABLED:-false}
       GEOFENCE_CLEANUP_INTERVAL_MINUTES: ${GEOFENCE_CLEANUP_INTERVAL_MINUTES:-5}
+
       # Database configuration for error logging
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-v2x_app_db}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-admin_user}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_JPA_SHOW_SQL: false
+
       # TIM Configuration
       TIM_CONFIG_FILE_PATH: /tim_config_files/tim-config.json
       TIM_ICONS_DIRECTORY: /tim_config_files/tim-icons
@@ -103,6 +116,7 @@ services:
       TIM_EXPIRATION_CLEANUP_ENABLED: ${TIM_EXPIRATION_CLEANUP_ENABLED:-true}
       TIM_EXPIRATION_CLEANUP_INTERVAL_MINUTES: ${TIM_EXPIRATION_CLEANUP_INTERVAL_MINUTES:-5}
       TIM_EXPIRATION_GRACE_PERIOD_HOURS: ${TIM_EXPIRATION_GRACE_PERIOD_HOURS:-2}
+
       # Secret Configuration
       ISS_SCMS_TOKEN: ${ISS_SCMS_TOKEN:-token}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-key}
@@ -116,9 +130,6 @@ services:
       API_LOGGING_LEVEL: ${API_LOGGING_LEVEL:-DEBUG}
     ports:
       - "8080:8080"
-    volumes:
-      - ./resources/tim_config_files/tim-config.json:/tim_config_files/tim-config.json:ro
-      - ./resources/tim_config_files/tim-icons:/tim_config_files/tim-icons:ro
     logging:
       options:
         max-size: "10m"

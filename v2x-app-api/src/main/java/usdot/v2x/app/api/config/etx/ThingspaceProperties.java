@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "thingspace")
 @Data
 public class ThingspaceProperties {
+    private Boolean enabled;
     private String endpoint;
     private String key;
     private String secret;

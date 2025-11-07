@@ -1,7 +1,8 @@
 deposit:
-  mode: ${DEPOSIT_MODE:API}
+  mode: ${DEPOSIT_MODE:ETX_CONFIGURATION_API}
 etx:
-  endpoint: ${ETX_ENDPOINT}
+  enabled: ${ETX_ENABLED:true}
+  endpoint: ${ETX_ENDPOINT:https://imp.thingspace.verizon.com}
   vendorId: ${ETX_VENDOR_ID}
   depositorVendorId: ${ETX_DEPOSITOR_VENDOR_ID:${ETX_VENDOR_ID}}
   username: ${ETX_VENDOR_USERNAME}
@@ -21,16 +22,17 @@ etx:
       enabled: ${GEOFENCE_CLEANUP_ENABLED:false}
       interval-minutes: ${GEOFENCE_CLEANUP_INTERVAL_MINUTES:5}
 thingspace:
-  endpoint: ${THINGSPACE_ENDPOINT}
+  enabled: ${THINGSPACE_ENABLED:true}
+  endpoint: ${THINGSPACE_ENDPOINT:https://thingspace.verizon.com}
   key: ${THINGSPACE_KEY}
   secret: ${THINGSPACE_SECRET}
   sessionTokenLifespanMinutes: ${TOKEN_EXPIRATION_MINUTES:10}
   tokenPeriodicRegenerationEnabled: ${TOKEN_PERIODIC_REGENERATION:true}
 keycloak:
-  realm: ${KEYCLOAK_REALM}
-  clientId: ${KEYCLOAK_CLIENT_NAME}
-  clientSecret: ${KEYCLOAK_CLIENT_SECRET}
-  endpoint: ${KEYCLOAK_ENDPOINT}
+  realm: ${KEYCLOAK_REALM:v2x-app}
+  clientId: ${KEYCLOAK_CLIENT_NAME:v2x-app-api}
+  clientSecret: ${KEYCLOAK_CLIENT_SECRET:change_this_for_production_use}
+  endpoint: ${KEYCLOAK_ENDPOINT:http://localhost:8084}
 geometry:
   geofence-offset-meters: ${GEOFENCE_OFFSET_METERS:50.0}
   default-lane-width-cm: ${DEFAULT_LANE_WIDTH_CM:1500.0}
@@ -56,6 +58,8 @@ geofence:
 
 # Database Configuration
 spring:
+  profiles:
+    default: "none"
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/v2x_app_db}
     username: ${POSTGRES_USER:admin_user}
@@ -74,12 +78,12 @@ spring:
       client:
         provider:
           keycloak:
-            issuer-uri: ${KEYCLOAK_ENDPOINT}/realms/${KEYCLOAK_REALM}
+            issuer-uri: ${keycloak.endpoint}/realms/${keycloak.realm}
             user-name-attribute: "preferred_username"
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ENDPOINT}/realms/${KEYCLOAK_REALM}
-          jwk-set-uri: ${KEYCLOAK_ENDPOINT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs
+          issuer-uri: ${keycloak.endpoint}/realms/${keycloak.realm}
+          jwk-set-uri: ${keycloak.endpoint}/realms/${keycloak.realm}/protocol/openid-connect/certs
 cors: "*"
 server:
   port: 8080
@@ -143,3 +147,6 @@ logging:
   level:
     root: INFO
     usdot.v2x.app.api: ${API_LOGGING_LEVEL:DEBUG}
+
+springdoc.api-docs.path: /api-docs
+springdoc.swagger-ui.path: /swagger-ui.html

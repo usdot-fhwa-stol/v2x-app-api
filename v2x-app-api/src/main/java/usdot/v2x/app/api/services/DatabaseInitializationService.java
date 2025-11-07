@@ -6,6 +6,7 @@ import usdot.v2x.app.api.config.etx.EtxProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ public class DatabaseInitializationService implements ApplicationRunner {
 
     @Override
     @Transactional
+    @ConditionalOnProperty(value = { "etx.enabled" }, havingValue = "true")
     public void run(ApplicationArguments args) throws Exception {
         log.info("Starting database initialization...");
 

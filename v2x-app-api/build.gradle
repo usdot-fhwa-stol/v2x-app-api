@@ -2,6 +2,7 @@ plugins {
     id 'org.springframework.boot' version '3.4.5'
     id 'io.spring.dependency-management' version '1.1.6'
     id 'java'
+    id 'org.springdoc.openapi-gradle-plugin' version '1.9.0'
 }
 
 // group = 'usdot.v2x.app.api'
@@ -127,4 +128,14 @@ test {
                     "${result.skippedTestCount} skipped"
         }
     }
+}
+
+
+openApi {
+	apiDocsUrl.set("http://localhost:8080/api-docs")
+	outputDir.set(file("../docs"))
+    outputFileName.set("v2x-app-api-openapi.json")
+    customBootRun {
+		args.set(["--spring.profiles.active=openapi"])
+	}
 }

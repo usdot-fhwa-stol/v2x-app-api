@@ -2,10 +2,9 @@ package usdot.v2x.app.api.etx.configuration;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationClearGeofence;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -23,14 +22,20 @@ import java.util.concurrent.TimeUnit;
 public class ConfigurationCleanupService {
 
     private final ConfigurationApi configurationApi;
+    private final Boolean enabled;
 
-    public ConfigurationCleanupService(ConfigurationApi configurationApi) {
+    public ConfigurationCleanupService(ConfigurationApi configurationApi, EtxProperties etxProperties) {
+        this.enabled = etxProperties.getEnabled();
         this.configurationApi = configurationApi;
     }
 
     @Scheduled(fixedRateString = "${etx.configuration.cleanup.interval-minutes}", timeUnit = TimeUnit.MINUTES)
     @ConditionalOnProperty(value = { "etx.configuration.cleanup.enabled" }, havingValue = "true")
     public void clearInactiveTimGeofences() {
+        if (!enabled) {
+            log.debug("Configuration cleanup is disabled, skipping scheduled cleanup of inactive TIM geofences");
+            return;
+        }
         log.debug("Starting scheduled cleanup of inactive TIM geofences");
 
         try {

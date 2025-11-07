@@ -33,6 +33,7 @@ class TokenServiceTest {
     void setUp() {
         ThingspaceProperties properties = new ThingspaceProperties();
         properties.setSessionTokenLifespanMinutes(60.0);
+        properties.setEnabled(true);
         tokenService = new TokenService(properties, thingspaceApi, tokenStore);
     }
 
@@ -110,16 +111,46 @@ class TokenServiceTest {
         when(thingspaceApi.generateSessionToken(anyString())).thenReturn(Mono.just(sessionToken));
 
         // When
-        Mono<TokenStore> result = tokenService.refreshTokensPeriodically();
+        tokenService.refreshTokensPeriodically();
+
+        // Then
+        verify(thingspaceApi).generateAccessToken();
+        verify(thingspaceApi).generateSessionToken(authToken.getAccess_token());
+    }
+
+    @Test
+    void whenThingspaceDisabled_thenReturnTokenStoreWithoutRefresh() {
+        // Given
+        ThingspaceProperties disabledProperties = new ThingspaceProperties();
+        disabledProperties.setSessionTokenLifespanMinutes(60.0);
+        disabledProperties.setEnabled(false);
+        TokenService disabledTokenService = new TokenService(disabledProperties, thingspaceApi, tokenStore);
+
+        // When
+        Mono<TokenStore> result = disabledTokenService.getTokenStore();
 
         // Then
         StepVerifier.create(result)
                 .expectNext(tokenStore)
                 .verifyComplete();
 
-        verify(thingspaceApi).generateAccessToken();
-        verify(thingspaceApi).generateSessionToken(authToken.getAccess_token());
-        verify(tokenStore).setAccessToken(eq(authToken.getAccess_token()), any(Instant.class));
-        verify(tokenStore).setSessionToken(eq(sessionToken.getSessionToken()), any(Instant.class));
+        verify(thingspaceApi, never()).generateAccessToken();
+        verify(thingspaceApi, never()).generateSessionToken(anyString());
+    }
+
+    @Test
+    void whenThingspaceDisabled_thenSkipPeriodicRefresh() {
+        // Given
+        ThingspaceProperties disabledProperties = new ThingspaceProperties();
+        disabledProperties.setSessionTokenLifespanMinutes(60.0);
+        disabledProperties.setEnabled(false);
+        TokenService disabledTokenService = new TokenService(disabledProperties, thingspaceApi, tokenStore);
+
+        // When
+        disabledTokenService.refreshTokensPeriodically();
+
+        // Then
+        verify(thingspaceApi, never()).generateAccessToken();
+        verify(thingspaceApi, never()).generateSessionToken(anyString());
     }
 }

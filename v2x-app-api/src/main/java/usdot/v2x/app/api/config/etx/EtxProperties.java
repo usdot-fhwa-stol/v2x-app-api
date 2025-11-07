@@ -12,6 +12,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "etx")
 @Data
 public class EtxProperties {
+    private Boolean enabled;
     private String endpoint;
     private String vendorId;
     private String depositorVendorId;

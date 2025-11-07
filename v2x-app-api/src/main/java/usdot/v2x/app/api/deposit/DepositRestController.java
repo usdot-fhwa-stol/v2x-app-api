@@ -74,7 +74,7 @@ public class DepositRestController {
 
             if (depositProperties.getMode() == DepositProperties.Mode.ETX_CONFIGURATION_API) {
                 // Deposit the V2X message to the ETX Configuration API
-                configurationApi.deposit(request);
+                return configurationApi.deposit(request);
             } else if (depositProperties.getMode() == DepositProperties.Mode.GEOFENCE_MQTT) {
                 // Convert the configuration request to Geofence deployment request
                 GeofenceDeploymentRequest geofenceRequest = geofenceDeploymentConverter
@@ -94,10 +94,10 @@ public class DepositRestController {
                         .createGeofenceDeployment(geofenceRequest);
 
                 return ResponseEntity.ok(response);
+            } else {
+                ErrorResponse errorResponse = new ErrorResponse("INVALID_DEPOSIT_MODE", "Invalid deposit mode");
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(errorResponse);
             }
-
-            ErrorResponse errorResponse = new ErrorResponse("INVALID_DEPOSIT_MODE", "Invalid deposit mode");
-            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(errorResponse);
         } catch (ErrorResponseException ex) {
             log.error("An error response exception occurred while processing the request: {}", ex.getMessage(), ex);
             return ResponseEntity.status(ex.getStatusCode()).body(ex.getErrorResponse());

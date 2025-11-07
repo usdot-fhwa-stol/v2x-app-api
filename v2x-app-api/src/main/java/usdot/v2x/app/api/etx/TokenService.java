@@ -18,14 +18,20 @@ public class TokenService {
     private final ThingspaceApi thingspaceApi;
     private final TokenStore tokenStore;
     private final Double sessionTokenLifespanMinutes;
+    private final Boolean enabled;
 
     public TokenService(ThingspaceProperties thingspaceProperties, ThingspaceApi thingspaceApi, TokenStore tokenStore) {
         this.thingspaceApi = thingspaceApi;
         this.tokenStore = tokenStore;
         this.sessionTokenLifespanMinutes = thingspaceProperties.getSessionTokenLifespanMinutes();
+        this.enabled = thingspaceProperties.getEnabled();
     }
 
     private Mono<TokenStore> refreshTokens() {
+        if (!enabled) {
+            log.debug("Thingspace is disabled, returning existing token store");
+            return Mono.just(tokenStore);
+        }
         return thingspaceApi.generateAccessToken()
                 .flatMap(accessToken -> {
                     tokenStore.setAccessToken(accessToken.getAccess_token(),
@@ -41,6 +47,10 @@ public class TokenService {
     }
 
     public Mono<TokenStore> getTokenStore() {
+        if (!enabled) {
+            log.debug("Thingspace is disabled, returning existing token store");
+            return Mono.just(tokenStore);
+        }
         if (!tokenStore.areTokensValid()) {
             log.debug("Refreshing Tokens - Returning Store {}", tokenStore.areTokensValid());
             return refreshTokens();
@@ -52,10 +62,15 @@ public class TokenService {
 
     @Scheduled(fixedRateString = "${thingspace.sessionTokenLifespanMinutes}", timeUnit = TimeUnit.MINUTES)
     @ConditionalOnProperty(value = { "thingspace.tokenPeriodicRegenerationEnabled" }, havingValue = "true")
-    public Mono<TokenStore> refreshTokensPeriodically() {
+    public void refreshTokensPeriodically() {
+        if (!enabled) {
+            log.debug("Thingspace is disabled, skipping periodic token refresh");
+            return;
+        }
         log.debug("Starting periodic token refresh");
-        return refreshTokens()
+        refreshTokens()
                 .doOnSuccess(v -> log.info("Periodic token refresh completed successfully"))
-                .doOnError(error -> log.warn("Periodic token refresh failed: {}", error.getMessage()));
+                .doOnError(error -> log.warn("Periodic token refresh failed: {}", error.getMessage()))
+                .subscribe();
     }
 }

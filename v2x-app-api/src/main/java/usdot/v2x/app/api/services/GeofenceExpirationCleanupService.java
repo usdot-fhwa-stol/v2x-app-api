@@ -2,6 +2,9 @@ package usdot.v2x.app.api.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.TimeUnit;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,7 +19,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@ConditionalOnProperty(name = "geofence.expiration.cleanup.enabled", havingValue = "true", matchIfMissing = true)
 public class GeofenceExpirationCleanupService {
 
     private final GeofenceDeploymentService geofenceDeploymentService;
@@ -27,13 +29,8 @@ public class GeofenceExpirationCleanupService {
     @Value("${geofence.expiration.grace-period-hours:2}")
     private int gracePeriodHours;
 
-    /**
-     * Scheduled method to deactivate expired Geofence deployments.
-     * Runs every X minutes as configured by
-     * geofence.expiration.cleanup.interval-minutes
-     * (default: 5 minutes).
-     */
-    @Scheduled(fixedDelayString = "#{${geofence.expiration.cleanup.interval-minutes:5} * 60 * 1000}")
+    @Scheduled(fixedRateString = "${geofence.expiration.cleanup.interval-minutes}", timeUnit = TimeUnit.MINUTES)
+    @ConditionalOnProperty(name = "geofence.expiration.cleanup.enabled", havingValue = "true", matchIfMissing = true)
     public void cleanupExpiredGeofenceDeployments() {
         try {
             log.debug("Starting scheduled cleanup of expired Geofence deployments (grace period: {} hours)",
