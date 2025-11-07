@@ -361,6 +361,297 @@
         }
       }
     },
+    "/prd/v2/configurations/geofence": {
+      "get": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Get geofence by ID",
+        "description": "Retrieves detailed information for a specific geofence by its ID. This endpoint returns the complete geofence configuration including geometry, properties, and metadata.",
+        "operationId": "getGeofence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Unique identifier of the geofence",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "geofence-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence details retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid geofence ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - geofence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Update existing geofence",
+        "description": "Updates an existing geofence with new configuration. All fields in the request will replace the existing geofence configuration.",
+        "operationId": "updateGeofence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Unique identifier of the geofence to update",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "geofence-001"
+          }
+        ],
+        "requestBody": {
+          "description": "Updated geofence configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationGeofence"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Geofence updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid geofence configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - geofence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Create new geofence",
+        "description": "Creates a new geofence with the specified configuration. The geofence can be used for V2X traffic management and safety applications.",
+        "operationId": "createGeofence",
+        "requestBody": {
+          "description": "Geofence configuration to create",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationGeofence"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Geofence created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid geofence configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Delete geofence",
+        "description": "Deletes a geofence from the system. This operation is irreversible and will remove all associated configuration and data.",
+        "operationId": "deleteGeofence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Unique identifier of the geofence to delete",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "geofence-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence deleted successfully"
+          },
+          "400": {
+            "description": "Bad request - invalid geofence ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - geofence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/prd/v2/registration-connection": {
       "post": {
         "tags": [
@@ -645,7 +936,7 @@
         ],
         "summary": "Delete geofence by identifier",
         "description": "Deletes geofence deployments associated with a specific identifier. This endpoint allows for manual removal of geofence deployments by their identifier. The system will deactivate the geofence deployment by setting is_active to false. This follows REST best practices by using query parameters for resource identification.",
-        "operationId": "deleteGeofence",
+        "operationId": "deleteGeofence_1",
         "parameters": [
           {
             "name": "identifier",
@@ -801,6 +1092,74 @@
           },
           "400": {
             "description": "Bad request - invalid connection data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prd/v2/configurations/clear": {
+      "post": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Clear multiple geofences",
+        "description": "Clears deployed geofences from the ETX. If set to only TIM messages it will clear all inactive TIMs.This operation can be used to remove multiple geofences at once.",
+        "operationId": "clearGeofences",
+        "requestBody": {
+          "description": "Criteria for clearing geofences",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationClearGeofence"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Geofences cleared successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid clear criteria",
             "content": {
               "application/json": {
                 "schema": {
@@ -1997,6 +2356,50 @@
         }
       }
     },
+    "/prd/v2/configurations/geofence/ids": {
+      "get": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Get all geofence IDs",
+        "description": "Retrieves a list of all available geofence IDs in the ETX. This endpoint returns summary information for all configured geofences in the ETX without the full geofence details.",
+        "operationId": "getGeofences",
+        "responses": {
+          "200": {
+            "description": "List of geofence summaries retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/prd/v2/admin/vendor-limits/{vendorId}": {
       "get": {
         "tags": [
@@ -2363,6 +2766,361 @@
           }
         }
       },
+      "ConfigurationGeofence": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "geoFence": {
+            "$ref": "#/components/schemas/GeofenceFeatureCollection"
+          },
+          "messageStandard": {
+            "type": "string",
+            "enum": [
+              "etsi",
+              "sae"
+            ]
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DistributionSchedule": {
+        "type": "object",
+        "properties": {
+          "repeatPeriod": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startTime": {
+            "type": "string"
+          }
+        }
+      },
+      "GeofenceFeature": {
+        "type": "object",
+        "description": "GeoJSON Feature representing a single geometric element within a geofence",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "GeoJSON type, must be \u0027Feature\u0027",
+            "example": "Feature"
+          },
+          "geometry": {
+            "description": "GeoJSON geometry object defining the spatial extent",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LineString"
+              },
+              {
+                "$ref": "#/components/schemas/MultiLineString"
+              },
+              {
+                "$ref": "#/components/schemas/MultiPolygon"
+              },
+              {
+                "$ref": "#/components/schemas/Polygon"
+              }
+            ]
+          },
+          "properties": {
+            "additionalProperties": false,
+            "description": "Properties object is required and must be an empty object. No content is allowed in the properties object. Must be an empty JSON object: {}. Any properties within this object will cause validation to fail. This field enforces that the properties object contains no key-value pairs.",
+            "example": {}
+          }
+        },
+        "required": [
+          "properties"
+        ]
+      },
+      "GeofenceFeatureCollection": {
+        "type": "object",
+        "description": "GeoJSON FeatureCollection representing a geofence area",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "GeoJSON type, must be \u0027FeatureCollection\u0027",
+            "example": "FeatureCollection"
+          },
+          "features": {
+            "type": "array",
+            "description": "Array of GeoJSON features defining the geofence geometry",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceFeature"
+            }
+          }
+        }
+      },
+      "Geometry": {
+        "discriminator": {
+          "propertyName": "type"
+        },
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "Limit": {},
+      "LimitHeadingItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Limit"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "heading": {
+                "$ref": "#/components/schemas/LimitItem"
+              }
+            }
+          }
+        ]
+      },
+      "LimitItem": {
+        "type": "object",
+        "properties": {
+          "min": {
+            "type": "number",
+            "format": "double"
+          },
+          "max": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "LimitSpeedItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Limit"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "speed": {
+                "$ref": "#/components/schemas/LimitItem"
+              }
+            }
+          }
+        ]
+      },
+      "LineString": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "roadUserType": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VulnerableRoadUser",
+                "Vehicle"
+              ]
+            }
+          },
+          "triggerConditions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "enter",
+                "leave",
+                "inside",
+                "crossing"
+              ]
+            }
+          },
+          "limits": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/LimitHeadingItem"
+                },
+                {
+                  "$ref": "#/components/schemas/LimitSpeedItem"
+                }
+              ]
+            }
+          },
+          "distributionType": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Targeted",
+                "Broadcast"
+              ]
+            }
+          },
+          "distributionSchedule": {
+            "$ref": "#/components/schemas/DistributionSchedule"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MultiLineString": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "format": "double"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MultiPolygon": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "format": "double"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Polygon": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "format": "double"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ConfigurationGeofenceResponse": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "geoFence": {
+            "$ref": "#/components/schemas/GeofenceFeatureCollection"
+          },
+          "messageStandard": {
+            "type": "string",
+            "enum": [
+              "etsi",
+              "sae"
+            ]
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "vendorId": {
+            "type": "string"
+          }
+        }
+      },
       "RegistrationPostRequest": {
         "type": "object",
         "description": "Request model for ETX registration",
@@ -2668,173 +3426,6 @@
           "asn1_hex"
         ]
       },
-      "GeofenceFeature": {
-        "type": "object",
-        "description": "GeoJSON Feature representing a single geometric element within a geofence",
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "GeoJSON type, must be \u0027Feature\u0027",
-            "example": "Feature"
-          },
-          "geometry": {
-            "description": "GeoJSON geometry object defining the spatial extent",
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/LineString"
-              },
-              {
-                "$ref": "#/components/schemas/MultiLineString"
-              },
-              {
-                "$ref": "#/components/schemas/MultiPolygon"
-              },
-              {
-                "$ref": "#/components/schemas/Polygon"
-              }
-            ]
-          },
-          "properties": {
-            "additionalProperties": false,
-            "description": "Properties object is required and must be an empty object. No content is allowed in the properties object. Must be an empty JSON object: {}. Any properties within this object will cause validation to fail. This field enforces that the properties object contains no key-value pairs.",
-            "example": {}
-          }
-        },
-        "required": [
-          "properties"
-        ]
-      },
-      "GeofenceFeatureCollection": {
-        "type": "object",
-        "description": "GeoJSON FeatureCollection representing a geofence area",
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "GeoJSON type, must be \u0027FeatureCollection\u0027",
-            "example": "FeatureCollection"
-          },
-          "features": {
-            "type": "array",
-            "description": "Array of GeoJSON features defining the geofence geometry",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceFeature"
-            }
-          }
-        }
-      },
-      "Geometry": {
-        "discriminator": {
-          "propertyName": "type"
-        },
-        "properties": {
-          "type": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "type"
-        ]
-      },
-      "LineString": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Geometry"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "coordinates": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "number",
-                    "format": "double"
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "MultiLineString": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Geometry"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "coordinates": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "array",
-                    "items": {
-                      "type": "number",
-                      "format": "double"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "MultiPolygon": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Geometry"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "coordinates": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "array",
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "number",
-                        "format": "double"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "Polygon": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Geometry"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "coordinates": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "array",
-                    "items": {
-                      "type": "number",
-                      "format": "double"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
       "GeofenceDeploymentResponse": {
         "type": "object",
         "description": "Response model for Geofence deployment",
@@ -2920,6 +3511,14 @@
           "lat",
           "long"
         ]
+      },
+      "ConfigurationClearGeofence": {
+        "type": "object",
+        "properties": {
+          "clear_tim_only": {
+            "type": "boolean"
+          }
+        }
       },
       "VendorLimitsRequest": {
         "type": "object",
@@ -3308,6 +3907,23 @@
             "items": {
               "$ref": "#/components/schemas/PathResponse"
             }
+          }
+        }
+      },
+      "ConfigurationGeofenceSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         }
       }

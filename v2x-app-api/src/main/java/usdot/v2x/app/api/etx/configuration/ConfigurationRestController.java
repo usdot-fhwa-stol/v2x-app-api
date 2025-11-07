@@ -1,7 +1,6 @@
 package usdot.v2x.app.api.etx.configuration;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofence;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceResponse;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceSummary;
@@ -15,8 +14,8 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -25,16 +24,13 @@ import static org.springframework.http.MediaType.*;
 
 import java.util.List;
 
-@Hidden
 @RestController
 @RequestMapping("/prd/v2/configurations")
-// @Tag(name = "Configuration", description = "V2X Message Deposit endpoints for
-// deployment to the ETX MQTT Broker")
 public class ConfigurationRestController {
     ConfigurationApi configurationApi;
 
     ConfigurationRestController(
-            ConfigurationApi configurationApi) {
+            @Autowired(required = false) ConfigurationApi configurationApi) {
         this.configurationApi = configurationApi;
     }
 

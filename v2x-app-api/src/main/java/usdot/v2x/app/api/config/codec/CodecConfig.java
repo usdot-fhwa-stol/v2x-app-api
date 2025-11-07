@@ -8,6 +8,7 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -22,6 +23,7 @@ public class CodecConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "j2735.codec.enabled", havingValue = "true", matchIfMissing = true)
     public MessageFrameCodec messageFrameCodec() {
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
         String configuredPath = isWindows

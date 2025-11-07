@@ -3,6 +3,8 @@ package usdot.v2x.app.api.decode;
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 import static org.springframework.http.MediaType.TEXT_PLAIN_VALUE;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import io.swagger.v3.oas.annotations.Hidden;
@@ -20,7 +22,7 @@ public class DecodeRestController {
     DecodeApi decodeApi;
 
     DecodeRestController(
-            DecodeApi decodeApi) {
+            @Autowired(required = false) DecodeApi decodeApi) {
         this.decodeApi = decodeApi;
     }
 

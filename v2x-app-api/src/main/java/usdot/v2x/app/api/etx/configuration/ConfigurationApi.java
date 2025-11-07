@@ -55,9 +55,11 @@ import java.util.List;
 import java.time.Clock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 
 @Slf4j
 @Component
+@ConditionalOnBean(MessageFrameCodec.class)
 public class ConfigurationApi {
 
     private String etxVendorId;

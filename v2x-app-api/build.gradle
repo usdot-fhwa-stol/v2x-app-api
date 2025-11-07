@@ -73,6 +73,8 @@ dependencies {
     
     // Database
     runtimeOnly 'org.postgresql:postgresql'
+    // H2 for in-memory database (used for OpenAPI generation)
+    runtimeOnly 'com.h2database:h2'
  
     // Geospatial tools
     implementation 'org.locationtech.jts:jts-core:1.20.0'

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 import us.dot.its.jpo.asn.j2735.r2024.MessageFrame.MessageFrame;
 import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformation;
@@ -23,6 +24,7 @@ import java.util.List;
  */
 @Component
 @Slf4j
+@ConditionalOnBean(MessageFrameCodec.class)
 public class TimExpirationCalculator {
 
     private final XmlMapper xmlMapper;

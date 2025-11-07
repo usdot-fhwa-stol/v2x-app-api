@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationClearGeofence;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -24,7 +26,8 @@ public class ConfigurationCleanupService {
     private final ConfigurationApi configurationApi;
     private final Boolean enabled;
 
-    public ConfigurationCleanupService(ConfigurationApi configurationApi, EtxProperties etxProperties) {
+    public ConfigurationCleanupService(@Autowired(required = false) ConfigurationApi configurationApi,
+            EtxProperties etxProperties) {
         this.enabled = etxProperties.getEnabled();
         this.configurationApi = configurationApi;
     }

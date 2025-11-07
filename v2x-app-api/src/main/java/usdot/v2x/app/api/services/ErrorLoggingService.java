@@ -18,7 +18,7 @@ import java.util.Map;
 @Slf4j
 public class ErrorLoggingService {
 
-    @Autowired
+    @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
 
     /**
@@ -248,6 +248,16 @@ public class ErrorLoggingService {
      * Save error log to database using JdbcTemplate
      */
     private void saveErrorLogToDatabase(Map<String, Object> errorLogData) {
+        // Skip database logging if JdbcTemplate is not available (e.g., when database
+        // is disabled)
+        if (jdbcTemplate == null) {
+            log.debug("JdbcTemplate not available, skipping database error logging. Error: {}",
+                    errorLogData.get("errorType"));
+            // Still log to console for visibility
+            log.info("Error log data (database not available): {}", errorLogData);
+            return;
+        }
+
         try {
             String sql = "INSERT INTO error_logs (timestamp, error_type, error_message, stack_trace, " +
                     "request_path, request_method, request_body, user_agent, client_ip, severity) " +

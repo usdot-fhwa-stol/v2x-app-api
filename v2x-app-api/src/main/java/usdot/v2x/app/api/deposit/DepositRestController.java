@@ -25,6 +25,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import static org.springframework.http.MediaType.*;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
 @RestController
@@ -43,7 +44,7 @@ public class DepositRestController {
             GeofenceDeploymentConverter geofenceDeploymentConverter,
             GeofenceProperties geofenceProperties,
             DepositProperties depositProperties,
-            ConfigurationApi configurationApi) {
+            @Autowired(required = false) ConfigurationApi configurationApi) {
         this.geofenceDeploymentService = geofenceDeploymentService;
         this.geofenceDeploymentConverter = geofenceDeploymentConverter;
         this.geofenceProperties = geofenceProperties;
@@ -74,6 +75,11 @@ public class DepositRestController {
 
             if (depositProperties.getMode() == DepositProperties.Mode.ETX_CONFIGURATION_API) {
                 // Deposit the V2X message to the ETX Configuration API
+                if (configurationApi == null) {
+                    ErrorResponse errorResponse = new ErrorResponse("CONFIGURATION_API_UNAVAILABLE",
+                            "ConfigurationApi is not available. Codec is disabled for OpenAPI generation.");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(errorResponse);
+                }
                 return configurationApi.deposit(request);
             } else if (depositProperties.getMode() == DepositProperties.Mode.GEOFENCE_MQTT) {
                 // Convert the configuration request to Geofence deployment request

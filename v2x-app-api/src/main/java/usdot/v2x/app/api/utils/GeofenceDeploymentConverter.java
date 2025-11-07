@@ -9,6 +9,8 @@ import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollec
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -41,7 +43,9 @@ public class GeofenceDeploymentConverter {
     private int gracePeriodHours;
 
     public GeofenceDeploymentConverter(@Qualifier("xmlMapper") XmlMapper xmlMapper,
-            GeohashUtils geohashUtils, MessageFrameCodec codec, TimExpirationCalculator timExpirationCalculator,
+            GeohashUtils geohashUtils,
+            @Autowired(required = false) MessageFrameCodec codec,
+            @Autowired(required = false) TimExpirationCalculator timExpirationCalculator,
             MessageTypeService messageTypeService) {
         this.xmlMapper = xmlMapper;
         this.geohashUtils = geohashUtils;
@@ -98,8 +102,11 @@ public class GeofenceDeploymentConverter {
         geofenceRequest.setDeployedBy(deployedBy);
 
         try {
-            Instant expirationTime = timExpirationCalculator.calculateExpirationTime(
-                    configRequest.getAsn1Hex(), gracePeriodHours);
+            Instant expirationTime = null;
+            if (timExpirationCalculator != null) {
+                expirationTime = timExpirationCalculator.calculateExpirationTime(
+                        configRequest.getAsn1Hex(), gracePeriodHours);
+            }
 
             if (expirationTime != null) {
                 geofenceRequest.setExpiresAt(expirationTime.toString());
@@ -195,6 +202,10 @@ public class GeofenceDeploymentConverter {
      * Parse ASN1 hex string to MessageFrame (similar to ConfigurationApi)
      */
     private MessageFrame<?> parseMessageFrame(String asn1Hex) throws JsonProcessingException {
+        if (codec == null) {
+            throw new UnsupportedOperationException(
+                    "MessageFrameCodec is not available. Codec is disabled for OpenAPI generation.");
+        }
         try {
             // Trim the hex string to remove any headers and get just the message payload
             String trimmedHex = UperUtil.trimToMessagePayload(asn1Hex);
