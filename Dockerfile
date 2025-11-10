@@ -1,5 +1,5 @@
 # === Build image for Java ===
-FROM gradle:jdk22 as builder
+FROM gradle:jdk22 AS builder
 
 WORKDIR /home/app
 
