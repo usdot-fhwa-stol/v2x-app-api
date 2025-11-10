@@ -142,8 +142,10 @@ public class GeofenceDeploymentConverter {
             // This would require parsing the V2X message to extract geographical
             // information
             log.warn("No override geofence provided and automatic extraction not implemented yet");
-            throw new UnsupportedOperationException(
-                    "Automatic geofence extraction from ASN.1 message not yet implemented. Please provide override_geofence.");
+            throw new ErrorResponseException(
+                    new ErrorResponse("GEOFENCE_EXTRACTION_NOT_SUPPORTED",
+                            "Automatic geofence extraction from ASN.1 message not yet implemented. Please provide override_geofence."),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
         }
 
         return geofenceRequest;
@@ -164,9 +166,11 @@ public class GeofenceDeploymentConverter {
             // For now, only TIM messages are supported
             log.error("Unsupported message type: {}. Only TIM messages are currently supported.",
                     messageFrame.getClass().getSimpleName());
-            throw new UnsupportedOperationException(
-                    "Message type " + messageFrame.getClass().getSimpleName()
-                            + " is not supported. Only TIM messages are currently supported.");
+            throw new ErrorResponseException(
+                    new ErrorResponse("UNSUPPORTED_MESSAGE_TYPE",
+                            "Message type " + messageFrame.getClass().getSimpleName()
+                                    + " is not supported. Only TIM messages are currently supported."),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
         }
     }
 
@@ -203,8 +207,10 @@ public class GeofenceDeploymentConverter {
      */
     private MessageFrame<?> parseMessageFrame(String asn1Hex) throws JsonProcessingException {
         if (codec == null) {
-            throw new UnsupportedOperationException(
-                    "MessageFrameCodec is not available. Codec is disabled for OpenAPI generation.");
+            throw new ErrorResponseException(
+                    new ErrorResponse("CODEC_UNAVAILABLE",
+                            "MessageFrameCodec is not available. Codec is disabled for OpenAPI generation."),
+                    HttpStatus.SERVICE_UNAVAILABLE);
         }
         try {
             // Trim the hex string to remove any headers and get just the message payload
