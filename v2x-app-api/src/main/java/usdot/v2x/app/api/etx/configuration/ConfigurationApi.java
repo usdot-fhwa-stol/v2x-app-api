@@ -15,21 +15,21 @@ import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceSummary;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationClearGeofence;
 import usdot.v2x.app.api.models.etx.configuration.geofence.DistributionSchedule;
 import usdot.v2x.app.api.models.etx.configuration.geofence.DistributionType;
-import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.etx.configuration.geofence.RoadUserType;
 import usdot.v2x.app.api.models.etx.configuration.geofence.TriggerCondition;
 import usdot.v2x.app.api.models.etx.configuration.messages.GenericMessage;
 import usdot.v2x.app.api.models.etx.configuration.messages.GenericMessageItem;
-import usdot.v2x.app.api.utils.MapCoordinateConverter;
-import usdot.v2x.app.api.utils.TimCoordinateConverter;
-import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
 import usdot.v2x.app.api.utils.UperUtil;
+import usdot.v2x.app.api.utils.TimCoordinateConverter;
+import usdot.v2x.app.api.utils.MapCoordinateConverter;
+import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
+import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
+import org.locationtech.jts.geom.Polygon;
+import java.util.HashMap;
 
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
-
-import org.locationtech.jts.geom.Polygon;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,19 +37,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Flux;
-import us.dot.its.jpo.asn.j2735.r2024.MapData.IntersectionGeometryList;
-import us.dot.its.jpo.asn.j2735.r2024.MapData.MapData;
-import us.dot.its.jpo.asn.j2735.r2024.MapData.MapDataMessageFrame;
 import us.dot.its.jpo.asn.j2735.r2024.MessageFrame.MessageFrame;
 import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerDataFrame;
 import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformation;
 import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformationMessageFrame;
+import us.dot.its.jpo.asn.j2735.r2024.MapData.MapData;
+import us.dot.its.jpo.asn.j2735.r2024.MapData.MapDataMessageFrame;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.time.Clock;
@@ -68,10 +66,10 @@ public class ConfigurationApi {
     private MessageFrameCodec codec;
     private ObjectMapper jsonMapper;
     private XmlMapper xmlMapper;
-    private TimCoordinateConverter timConverter;
-    private MapCoordinateConverter mapConverter;
     private Clock clock;
     private DistributionType distributionType;
+    private TimCoordinateConverter timCoordinateConverter;
+    private MapCoordinateConverter mapCoordinateConverter;
 
     // For testing to mock the current time
     @Autowired
@@ -81,11 +79,9 @@ public class ConfigurationApi {
             WebClient.Builder webClientBuilder,
             MessageFrameCodec codec,
             ObjectMapper jsonMapper,
-            @Qualifier("xmlMapper") XmlMapper xmlMapper,
-            TimCoordinateConverter timConverter,
-            MapCoordinateConverter mapConverter) {
-        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, timConverter, mapConverter,
-                Clock.systemUTC());
+            @Qualifier("xmlMapper") XmlMapper xmlMapper) {
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, Clock.systemUTC(), null,
+                null);
     }
 
     public ConfigurationApi(
@@ -95,9 +91,20 @@ public class ConfigurationApi {
             MessageFrameCodec codec,
             ObjectMapper jsonMapper,
             XmlMapper xmlMapper,
-            TimCoordinateConverter timConverter,
-            MapCoordinateConverter mapConverter,
             Clock clock) {
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock, null, null);
+    }
+
+    public ConfigurationApi(
+            EtxProperties etxProperties,
+            TokenService tokenService,
+            WebClient.Builder webClientBuilder,
+            MessageFrameCodec codec,
+            ObjectMapper jsonMapper,
+            XmlMapper xmlMapper,
+            Clock clock,
+            TimCoordinateConverter timCoordinateConverter,
+            MapCoordinateConverter mapCoordinateConverter) {
         this.etxVendorId = etxProperties.getVendorId();
         this.tokenService = tokenService;
         this.webClient = webClientBuilder.baseUrl(etxProperties.getEndpoint() + "/api/v1/application/configurations")
@@ -105,10 +112,10 @@ public class ConfigurationApi {
         this.jsonMapper = jsonMapper;
         this.xmlMapper = xmlMapper;
         this.codec = codec;
-        this.timConverter = timConverter;
-        this.mapConverter = mapConverter;
         this.clock = clock;
         this.distributionType = etxProperties.getConfiguration().getDistributionType();
+        this.timCoordinateConverter = timCoordinateConverter;
+        this.mapCoordinateConverter = mapCoordinateConverter;
     }
 
     /**
@@ -358,52 +365,19 @@ public class ConfigurationApi {
     public ResponseEntity<Void> deposit(DepositRequest request) throws JsonProcessingException {
         MessageFrame<?> messageFrame = parseMessageFrame(request.getAsn1Hex());
 
-        // If deployment region is provided, use it directly
-        if (request.getOverrideGeofence() != null) {
-            return createOrUpdateGeofenceWithDeploymentRegion(request, messageFrame);
+        // Extract geofence from message if override geofence is not provided
+        GeofenceFeatureCollection deploymentRegion = request.getOverrideGeofence();
+        if (deploymentRegion == null) {
+            deploymentRegion = extractGeofenceFromMessage(messageFrame);
         }
 
-        if (messageFrame instanceof TravelerInformationMessageFrame) {
-            return depositTIM(request, (TravelerInformationMessageFrame) messageFrame);
-        } else if (messageFrame instanceof MapDataMessageFrame) {
-            return depositMAP(request, (MapDataMessageFrame) messageFrame);
-        } else {
-            throw new ErrorResponseException(
-                    new ErrorResponse("Invalid message type", "Only MAP and TIM messages are supported"),
-                    HttpStatus.UNPROCESSABLE_ENTITY);
-        }
-    }
-
-    public ResponseEntity<Void> depositTIM(DepositRequest request,
-            TravelerInformationMessageFrame messageFrame) throws JsonProcessingException {
-        MessageInfo messageInfo = extractTimMessageInfo(messageFrame);
-        TimCoordinateConverter.TimGeometry geometry = timConverter.convertTimToCoordinates(
-                ((TravelerInformationMessageFrame) messageFrame).getValue().getDataFrames());
-
-        return createOrUpdateGeofence(request, messageInfo.name, geometry.geofenceGeometry,
-                messageInfo.startYear, messageInfo.startTimeMinutes, messageInfo.durationTime, messageInfo.messageType);
-    }
-
-    public ResponseEntity<Void> depositMAP(DepositRequest request, MapDataMessageFrame messageFrame)
-            throws JsonProcessingException {
-        MessageInfo messageInfo = extractMapMessageInfo(messageFrame);
-
-        IntersectionGeometryList intersections = ((MapDataMessageFrame) messageFrame).getValue().getIntersections();
-        if (intersections == null || intersections.isEmpty()) {
-            throw new ErrorResponseException(
-                    new ErrorResponse("MAP message must contain at least one intersection", "invalid MAP message"),
-                    HttpStatus.UNPROCESSABLE_ENTITY);
-        }
-
-        MapCoordinateConverter.MapGeometry geometry = mapConverter.convertMapToCoordinates(intersections);
-
-        return createOrUpdateGeofence(request, messageInfo.name, geometry.geofenceGeometry,
-                messageInfo.startYear, messageInfo.startTimeMinutes, messageInfo.durationTime, messageInfo.messageType);
+        return createOrUpdateGeofenceWithDeploymentRegion(request, messageFrame, deploymentRegion);
     }
 
     private ResponseEntity<Void> createOrUpdateGeofenceWithDeploymentRegion(
             DepositRequest request,
-            MessageFrame<?> messageFrame) throws JsonProcessingException {
+            MessageFrame<?> messageFrame,
+            GeofenceFeatureCollection deploymentRegion) throws JsonProcessingException {
 
         MessageInfo messageInfo;
         if (messageFrame instanceof TravelerInformationMessageFrame) {
@@ -416,7 +390,7 @@ public class ConfigurationApi {
                     HttpStatus.UNPROCESSABLE_ENTITY);
         }
 
-        return createOrUpdateGeofence(request, messageInfo.name, request.getOverrideGeofence(),
+        return createOrUpdateGeofence(request, messageInfo.name, deploymentRegion,
                 messageInfo.startYear, messageInfo.startTimeMinutes, messageInfo.durationTime, messageInfo.messageType);
     }
 
@@ -434,35 +408,6 @@ public class ConfigurationApi {
                 durationTime);
         ConfigurationGeofence geofence = createConfigurationGeofence(name, request.getAsn1Hex(), deploymentRegion,
                 message);
-
-        createOrUpdateGeofenceIfExists(name, geofence);
-        return ResponseEntity.noContent().build();
-    }
-
-    private ResponseEntity<Void> createOrUpdateGeofence(
-            DepositRequest request,
-            String name,
-            Polygon geofencePolygon,
-            long startYear,
-            long startTimeMinutes,
-            long durationTime,
-            String messageType) throws JsonProcessingException {
-
-        GeofenceFeature feature = new GeofenceFeature();
-        feature.setType("Feature");
-        feature.setProperties(new HashMap<>());
-
-        // Use the helper to convert JTS Polygon to custom geometry
-        GeofenceFeatureHelper.setGeometry(feature, geofencePolygon);
-
-        GeofenceFeatureCollection geoFence = new GeofenceFeatureCollection();
-        geoFence.setType("FeatureCollection");
-        geoFence.setFeatures(List.of(feature));
-
-        String base64Asn1 = hexToBase64(request.getAsn1Hex());
-        GenericMessage message = createGenericMessage(request, messageType, base64Asn1, startYear, startTimeMinutes,
-                durationTime);
-        ConfigurationGeofence geofence = createConfigurationGeofence(name, request.getAsn1Hex(), geoFence, message);
 
         createOrUpdateGeofenceIfExists(name, geofence);
         return ResponseEntity.noContent().build();
@@ -605,6 +550,119 @@ public class ConfigurationApi {
         }
 
         return ResponseEntity.ok(deletedIds);
+    }
+
+    /**
+     * Extract geofence from ASN.1 message frame
+     * 
+     * @param messageFrame The parsed message frame
+     * @return GeofenceFeatureCollection extracted from the message
+     */
+    private GeofenceFeatureCollection extractGeofenceFromMessage(MessageFrame<?> messageFrame) {
+        if (messageFrame instanceof TravelerInformationMessageFrame) {
+            return extractGeofenceFromTim((TravelerInformationMessageFrame) messageFrame);
+        } else if (messageFrame instanceof MapDataMessageFrame) {
+            return extractGeofenceFromMap((MapDataMessageFrame) messageFrame);
+        } else {
+            throw new ErrorResponseException(
+                    new ErrorResponse("UNSUPPORTED_MESSAGE_TYPE",
+                            "Message type " + messageFrame.getClass().getSimpleName()
+                                    + " is not supported. Only TIM and MAP messages are currently supported."),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Extract geofence from TIM message
+     * 
+     * @param timFrame The TIM message frame
+     * @return GeofenceFeatureCollection extracted from the TIM message
+     */
+    private GeofenceFeatureCollection extractGeofenceFromTim(TravelerInformationMessageFrame timFrame) {
+        if (timCoordinateConverter == null) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("OVERRIDE_GEOFENCE_REQUIRED",
+                            "Override geofence is required when TimCoordinateConverter is not available. Cannot extract geofence from TIM message."),
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            TravelerInformation tim = timFrame.getValue();
+            List<TravelerDataFrame> dataFrames = tim.getDataFrames();
+            if (dataFrames == null || dataFrames.isEmpty()) {
+                throw new ErrorResponseException(
+                        new ErrorResponse("TIM message must contain at least one data frame", "invalid TIM message"),
+                        HttpStatus.UNPROCESSABLE_ENTITY);
+            }
+
+            TimCoordinateConverter.TimGeometry geometry = timCoordinateConverter.convertTimToCoordinates(dataFrames);
+            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+        } catch (ErrorResponseException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error extracting geofence from TIM message: {}", e.getMessage(), e);
+            throw new ErrorResponseException(
+                    new ErrorResponse("FAILED_TO_EXTRACT_GEOFENCE",
+                            "Failed to extract geofence from TIM message: " + e.getMessage()),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Extract geofence from MAP message
+     * 
+     * @param mapFrame The MAP message frame
+     * @return GeofenceFeatureCollection extracted from the MAP message
+     */
+    private GeofenceFeatureCollection extractGeofenceFromMap(MapDataMessageFrame mapFrame) {
+        if (mapCoordinateConverter == null) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("OVERRIDE_GEOFENCE_REQUIRED",
+                            "Override geofence is required when MapCoordinateConverter is not available. Cannot extract geofence from MAP message."),
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            MapData mapData = mapFrame.getValue();
+            us.dot.its.jpo.asn.j2735.r2024.MapData.IntersectionGeometryList intersections = mapData.getIntersections();
+            if (intersections == null || intersections.isEmpty()) {
+                throw new ErrorResponseException(
+                        new ErrorResponse("MAP message must contain at least one intersection", "invalid MAP message"),
+                        HttpStatus.UNPROCESSABLE_ENTITY);
+            }
+
+            MapCoordinateConverter.MapGeometry geometry = mapCoordinateConverter.convertMapToCoordinates(intersections);
+            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+        } catch (ErrorResponseException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error extracting geofence from MAP message: {}", e.getMessage(), e);
+            throw new ErrorResponseException(
+                    new ErrorResponse("FAILED_TO_EXTRACT_GEOFENCE",
+                            "Failed to extract geofence from MAP message: " + e.getMessage()),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Convert JTS Polygon to GeofenceFeatureCollection
+     * 
+     * @param polygon The JTS Polygon to convert
+     * @return GeofenceFeatureCollection containing the polygon
+     */
+    private GeofenceFeatureCollection convertPolygonToGeofenceFeatureCollection(Polygon polygon) {
+        GeofenceFeature feature = new GeofenceFeature();
+        feature.setType("Feature");
+        feature.setProperties(new HashMap<>());
+
+        // Use the helper to convert JTS Polygon to custom geometry
+        GeofenceFeatureHelper.setGeometry(feature, polygon);
+
+        GeofenceFeatureCollection geoFence = new GeofenceFeatureCollection();
+        geoFence.setType("FeatureCollection");
+        geoFence.setFeatures(List.of(feature));
+
+        return geoFence;
     }
 
     /**

@@ -7,7 +7,6 @@ import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceSummary;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationClearGeofence;
 
-import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

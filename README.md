@@ -26,7 +26,7 @@ The application consists of three main services:
    - User and role management
 
 3. **postgres** (Port 5432): Database
-   - Stores registration logs, geofence deployments, vendor/user limits
+   - Stores registration logs, geofence deployments, vendor/user registration limits
 
 ## Prerequisites
 

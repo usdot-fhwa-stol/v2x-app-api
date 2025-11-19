@@ -174,7 +174,7 @@ public class ConfigurationApiTest {
 
         // Initialize ConfigurationApi with mocked dependencies
         configurationApi = new ConfigurationApi(etxProperties, tokenService, webClientBuilder, codec,
-                objectMapper, xmlMapper, timConverter, mapConverter, clock);
+                objectMapper, xmlMapper, clock, timConverter, mapConverter);
     }
 
     @Test
@@ -563,7 +563,8 @@ public class ConfigurationApiTest {
 
         // Mock codec behavior to return the sample TIM as XML
         // Convert JSON to XML for the mock
-        MessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(), MessageFrame.class);
+        TravelerInformationMessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(),
+                TravelerInformationMessageFrame.class);
         String xer = xmlMapper.writeValueAsString(messageFrame);
         when(codec.uperToXer(any(byte[].class))).thenReturn(xer);
 
@@ -576,9 +577,9 @@ public class ConfigurationApiTest {
                 new Coordinate(0, 1),
                 new Coordinate(0, 0)
         };
-        Polygon polygon = factory.createPolygon(coords);
+        Polygon jtsPolygon = factory.createPolygon(coords);
         TimCoordinateConverter.TimGeometry geometry = new TimCoordinateConverter.TimGeometry(
-                factory.createLineString(coords), polygon);
+                factory.createLineString(coords), jtsPolygon);
 
         when(timConverter.convertTimToCoordinates(any())).thenReturn(geometry);
 
