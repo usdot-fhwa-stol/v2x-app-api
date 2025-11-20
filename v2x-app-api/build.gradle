@@ -5,9 +5,7 @@ plugins {
     id 'org.springdoc.openapi-gradle-plugin' version '1.9.0'
 }
 
-// group = 'usdot.v2x.app.api'
-// version = '0.0.1-SNAPSHOT'
-description = 'CV_MEC Partner API'
+description = 'V2X App API'
 
 repositories {
     mavenCentral().content {

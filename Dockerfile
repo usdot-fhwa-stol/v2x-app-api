@@ -21,7 +21,7 @@ RUN cd jpo-asn-pojos/jpo-asn-j2735-2024 && gradle clean build -x test
 COPY ./j2735-ffm-java/j2735-2024-ffm-lib/src /home/app/j2735-ffm-java/j2735-2024-ffm-lib/src
 COPY ./j2735-ffm-java/j2735-2024-ffm-lib/build.gradle /home/app/j2735-ffm-java/j2735-2024-ffm-lib
 
-# Copy Partner API files
+# Copy V2X App API files
 COPY ./v2x-app-api/build.gradle ./v2x-app-api/settings.gradle ./v2x-app-api/
 
 # Copy source code

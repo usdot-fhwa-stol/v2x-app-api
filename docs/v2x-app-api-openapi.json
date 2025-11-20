@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "V2X MEC Partner API",
-    "description": "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. This Partner API provides endpoints for ETX registration, V2X Message Deposit, and authentication services.",
+    "title": "V2X App API",
+    "description": "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. This App API provides endpoints for ETX registration, V2X Message Deposit, and authentication services.",
     "version": "1.0.0"
   },
   "servers": [

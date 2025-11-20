@@ -12,9 +12,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableScheduling
-@OpenAPIDefinition(info = @Info(title = "V2X MEC Partner API", version = "1.0.0", description = "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. "
+@OpenAPIDefinition(info = @Info(title = "V2X App API", version = "1.0.0", description = "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. "
         +
-        "This Partner API provides endpoints for ETX registration, V2X Message Deposit, " +
+        "This App API provides endpoints for ETX registration, V2X Message Deposit, " +
         "and authentication services."), tags = {
                 @Tag(name = "Authentication", description = "Authentication and authorization for Registration and Deposit endpoints"),
                 @Tag(name = "Deposit", description = "V2X Message Deposit endpoints for deployment to the ETX MQTT Broker"),
