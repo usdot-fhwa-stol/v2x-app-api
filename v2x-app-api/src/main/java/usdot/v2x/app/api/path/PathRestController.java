@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -36,7 +38,7 @@ public class PathRestController {
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
     @GetMapping(produces = "application/json")
     @Operation(summary = "Get all paths", description = "Retrieves all active paths in GeoJSON-like format. " +
-            "This endpoint returns a collection of paths with their coordinates, timestamps, and metadata.")
+            "This endpoint returns a collection of paths with their coordinates, timestamps, and metadata.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Paths retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = PathsResponse.class))),
             @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
@@ -57,7 +59,7 @@ public class PathRestController {
 
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
     @GetMapping(value = "/{id}", produces = "application/json")
-    @Operation(summary = "Get path by ID", description = "Retrieves a specific path by its ID in GeoJSON-like format.")
+    @Operation(summary = "Get path by ID", description = "Retrieves a specific path by its ID in GeoJSON-like format.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Path retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = PathResponse.class))),
             @ApiResponse(responseCode = "404", description = "Path not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
@@ -81,7 +83,7 @@ public class PathRestController {
     @PostMapping(produces = "application/json", consumes = "application/json")
     @Operation(summary = "Create or update path", description = "Creates a new path with GeoJSON-like structure, or updates an existing path if one with the same name already exists. "
             +
-            "Only administrators can create/update paths.")
+            "Only administrators can create/update paths.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Path created successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = PathResponse.class))),
             @ApiResponse(responseCode = "200", description = "Path updated successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = PathResponse.class))),
@@ -111,7 +113,7 @@ public class PathRestController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping(value = "/{id}", produces = "application/json")
     @Operation(summary = "Delete path", description = "Soft deletes a path by setting it as inactive. " +
-            "Only administrators can delete paths.")
+            "Only administrators can delete paths.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Path deleted successfully"),
             @ApiResponse(responseCode = "404", description = "Path not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),

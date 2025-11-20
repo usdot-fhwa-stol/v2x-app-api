@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +39,7 @@ public class VendorLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping
-    @Operation(summary = "Get all vendor limits", description = "Retrieves all vendor limits (Admin only)")
+    @Operation(summary = "Get all vendor limits", description = "Retrieves all vendor limits (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Vendor limits retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
@@ -63,7 +64,7 @@ public class VendorLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/{vendorId}")
-    @Operation(summary = "Get vendor limits by vendor ID", description = "Retrieves vendor limits for a specific vendor (Admin only)")
+    @Operation(summary = "Get vendor limits by vendor ID", description = "Retrieves vendor limits for a specific vendor (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Vendor limits retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
@@ -92,7 +93,7 @@ public class VendorLimitsRestController {
     @PostMapping
     @Operation(summary = "Create or update vendor limits", description = "Creates new vendor limits or updates existing ones. "
             +
-            "Vendor limits control the total number of registrations a vendor can have across all users (Admin only)")
+            "Vendor limits control the total number of registrations a vendor can have across all users (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Vendor limits created/updated successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = VendorLimitsResponse.class))),
             @ApiResponse(responseCode = "400", description = "Bad request - invalid data"),
@@ -121,7 +122,7 @@ public class VendorLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping("/{vendorId}")
-    @Operation(summary = "Delete vendor limits", description = "Deletes vendor limits for a specific vendor (Admin only)")
+    @Operation(summary = "Delete vendor limits", description = "Deletes vendor limits for a specific vendor (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Vendor limits deleted successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),

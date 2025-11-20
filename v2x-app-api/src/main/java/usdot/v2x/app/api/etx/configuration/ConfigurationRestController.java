@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -38,7 +40,7 @@ public class ConfigurationRestController {
     @Operation(summary = "Get all geofence IDs", description = "Retrieves a list of all available geofence IDs in the ETX. "
             +
             "This endpoint returns summary information for all configured geofences in the ETX " +
-            "without the full geofence details.", responses = {
+            "without the full geofence details.", security = @SecurityRequirement(name = "BearerAuth"), responses = {
                     @ApiResponse(responseCode = "200", description = "List of geofence summaries retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofenceSummary.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),
                     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions", content = @Content(mediaType = "application/json")),
@@ -53,7 +55,7 @@ public class ConfigurationRestController {
     @Operation(summary = "Get geofence by ID", description = "Retrieves detailed information for a specific geofence by its ID. "
             +
             "This endpoint returns the complete geofence configuration including " +
-            "geometry, properties, and metadata.", parameters = {
+            "geometry, properties, and metadata.", security = @SecurityRequirement(name = "BearerAuth"), parameters = {
                     @Parameter(name = "id", description = "Unique identifier of the geofence", required = true, example = "geofence-001")
             }, responses = {
                     @ApiResponse(responseCode = "200", description = "Geofence details retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofenceResponse.class))),
@@ -72,7 +74,7 @@ public class ConfigurationRestController {
     @PostMapping("/geofence")
     @Operation(summary = "Create new geofence", description = "Creates a new geofence with the specified configuration. "
             +
-            "The geofence can be used for V2X traffic management and safety applications.", requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Geofence configuration to create", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofence.class))), responses = {
+            "The geofence can be used for V2X traffic management and safety applications.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Geofence configuration to create", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofence.class))), responses = {
                     @ApiResponse(responseCode = "200", description = "Geofence created successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofenceResponse.class))),
                     @ApiResponse(responseCode = "400", description = "Bad request - invalid geofence configuration", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),
@@ -88,9 +90,9 @@ public class ConfigurationRestController {
     @PutMapping("/geofence")
     @Operation(summary = "Update existing geofence", description = "Updates an existing geofence with new configuration. "
             +
-            "All fields in the request will replace the existing geofence configuration.", parameters = {
+            "All fields in the request will replace the existing geofence configuration.", security = @SecurityRequirement(name = "BearerAuth"), parameters = {
                     @Parameter(name = "id", description = "Unique identifier of the geofence to update", required = true, example = "geofence-001")
-            }, requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Updated geofence configuration", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofence.class))), responses = {
+            }, requestBody = @RequestBody(description = "Updated geofence configuration", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofence.class))), responses = {
                     @ApiResponse(responseCode = "200", description = "Geofence updated successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationGeofenceResponse.class))),
                     @ApiResponse(responseCode = "400", description = "Bad request - invalid geofence configuration", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),
@@ -108,7 +110,7 @@ public class ConfigurationRestController {
     @DeleteMapping("/geofence")
     @Operation(summary = "Delete geofence", description = "Deletes a geofence from the system. This operation is irreversible "
             +
-            "and will remove all associated configuration and data.", parameters = {
+            "and will remove all associated configuration and data.", security = @SecurityRequirement(name = "BearerAuth"), parameters = {
                     @Parameter(name = "id", description = "Unique identifier of the geofence to delete", required = true, example = "geofence-001")
             }, responses = {
                     @ApiResponse(responseCode = "200", description = "Geofence deleted successfully"),
@@ -127,7 +129,7 @@ public class ConfigurationRestController {
     @PostMapping(value = "/clear", consumes = APPLICATION_JSON_VALUE)
     @Operation(summary = "Clear multiple geofences", description = "Clears deployed geofences from the ETX. If set to only TIM messages it will clear all inactive TIMs."
             +
-            "This operation can be used to remove multiple geofences at once.", requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Criteria for clearing geofences", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationClearGeofence.class))), responses = {
+            "This operation can be used to remove multiple geofences at once.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Criteria for clearing geofences", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConfigurationClearGeofence.class))), responses = {
                     @ApiResponse(responseCode = "200", description = "Geofences cleared successfully", content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = String.class)))),
                     @ApiResponse(responseCode = "400", description = "Bad request - invalid clear criteria", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),

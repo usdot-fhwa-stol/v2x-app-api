@@ -294,7 +294,7 @@ cd v2x-app-api
 
 Generate OpenAPI spec:
 ```bash
-./gradlew openApi
+./gradlew generateOpenApiDocs
 ```
 
 Output: `docs/v2x-app-api-openapi.json`

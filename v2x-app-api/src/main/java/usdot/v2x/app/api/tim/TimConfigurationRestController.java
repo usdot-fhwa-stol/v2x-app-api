@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ContentDisposition;
@@ -37,7 +38,7 @@ public class TimConfigurationRestController {
             +
             "This endpoint returns the configuration JSON containing TIM phrases, their codes, graphics, and overlay information "
             +
-            "along with a version number that correlates to a downloadable ZIP file of icons.")
+            "along with a version number that correlates to a downloadable ZIP file of icons.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "TIM configuration retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = TimConfigurationResponse.class))),
             @ApiResponse(responseCode = "404", description = "TIM configuration file not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
@@ -62,7 +63,7 @@ public class TimConfigurationRestController {
     @GetMapping(value = "/icons/{version}", produces = "application/gzip")
     @Operation(summary = "Download TIM icons TAR.GZ", description = "Downloads a TAR.GZ file containing all TIM icons for the specified version. "
             +
-            "This endpoint returns all available icons for the given version in a compressed tar.gz archive.")
+            "This endpoint returns all available icons for the given version in a compressed tar.gz archive.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "TIM icons TAR.GZ file downloaded successfully"),
             @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))

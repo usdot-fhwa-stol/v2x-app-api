@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import org.springframework.http.HttpStatus;
@@ -39,7 +40,7 @@ public class GeofenceExpirationRestController {
     @PostMapping("/cleanup")
     @Operation(summary = "Manually trigger Geofence expiration cleanup", description = "Manually triggers the cleanup process to deactivate expired Geofence deployments. "
             +
-            "This endpoint is useful for testing and immediate cleanup without waiting for the scheduled task.")
+            "This endpoint is useful for testing and immediate cleanup without waiting for the scheduled task.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Cleanup completed successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
@@ -67,7 +68,7 @@ public class GeofenceExpirationRestController {
     @GetMapping("/expired")
     @Operation(summary = "Get expired Geofence deployments", description = "Retrieves a list of all Geofence deployments that have expired. "
             +
-            "This endpoint is useful for monitoring and debugging expiration issues.")
+            "This endpoint is useful for monitoring and debugging expiration issues.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Expired Geofence deployments retrieved successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
@@ -87,7 +88,7 @@ public class GeofenceExpirationRestController {
     @GetMapping("/cleanup/status")
     @Operation(summary = "Get cleanup service status", description = "Retrieves the current status of the Geofence expiration cleanup service, "
             +
-            "including the cleanup interval and whether the service is enabled.")
+            "including the cleanup interval and whether the service is enabled.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Geofence cleanup service status retrieved successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")

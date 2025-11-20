@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,7 +30,7 @@ public class SecretRestController {
 
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
     @GetMapping(value = "/secrets", produces = "application/json")
-    @Operation(summary = "Get secret configuration", description = "Retrieves secret configuration including tokens and S3 settings.")
+    @Operation(summary = "Get secret configuration", description = "Retrieves secret configuration including tokens and S3 settings.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Secret configuration retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SecretResponse.class))),
             @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = usdot.v2x.app.api.models.etx.ErrorResponse.class)))

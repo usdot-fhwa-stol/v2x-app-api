@@ -17,6 +17,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 
@@ -58,7 +60,7 @@ public class DepositRestController {
             +
             "This endpoint is used to deploy V2X messages (TIM, MAP, etc.) with geospatial information. " +
             "The configuration must include geofence overrides to define the deployment area. " +
-            "Vendor ID is automatically determined from the user's JWT token based on their role.", requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Configuration data to deposit", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = DepositRequest.class))), responses = {
+            "Vendor ID is automatically determined from the user's JWT token based on their role.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Configuration data to deposit", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = DepositRequest.class))), responses = {
                     @ApiResponse(responseCode = "200", description = "V2X message deployed successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = GeofenceDeploymentResponse.class))),
                     @ApiResponse(responseCode = "400", description = "Bad request - invalid configuration data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),
@@ -130,7 +132,7 @@ public class DepositRestController {
             +
             "The system will deactivate the geofence deployment by setting is_active to false. "
             +
-            "This follows REST best practices by using query parameters for resource identification.", responses = {
+            "This follows REST best practices by using query parameters for resource identification.", security = @SecurityRequirement(name = "BearerAuth"), responses = {
                     @ApiResponse(responseCode = "204", description = "Geofence deleted successfully"),
                     @ApiResponse(responseCode = "400", description = "Bad request - invalid identifier", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),

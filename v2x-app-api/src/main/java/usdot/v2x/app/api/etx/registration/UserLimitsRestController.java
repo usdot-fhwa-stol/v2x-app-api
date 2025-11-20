@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +39,7 @@ public class UserLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping
-    @Operation(summary = "Get all user limits", description = "Retrieves all user limits (Admin only)")
+    @Operation(summary = "Get all user limits", description = "Retrieves all user limits (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User limits retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
@@ -63,7 +64,7 @@ public class UserLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/user/{username}")
-    @Operation(summary = "Get user limits by username", description = "Retrieves user limits for a specific username (Admin only)")
+    @Operation(summary = "Get user limits by username", description = "Retrieves user limits for a specific username (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User limits retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
@@ -89,7 +90,7 @@ public class UserLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/vendor/{vendorId}")
-    @Operation(summary = "Get user limits by vendor ID", description = "Retrieves user limits for a specific vendor (Admin only)")
+    @Operation(summary = "Get user limits by vendor ID", description = "Retrieves user limits for a specific vendor (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User limits retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
@@ -117,7 +118,7 @@ public class UserLimitsRestController {
     @PostMapping
     @Operation(summary = "Create or update user limits", description = "Creates new user limits or updates existing ones. "
             +
-            "Sets personal registration limits for a specific user (Admin only)")
+            "Sets personal registration limits for a specific user (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User limits created/updated successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = UserLimitsResponse.class))),
             @ApiResponse(responseCode = "400", description = "Bad request - invalid data"),
@@ -147,7 +148,7 @@ public class UserLimitsRestController {
      */
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping("/user/{username}/vendor/{vendorId}")
-    @Operation(summary = "Delete user limits", description = "Deletes user limits for a specific user and vendor (Admin only)")
+    @Operation(summary = "Delete user limits", description = "Deletes user limits for a specific user and vendor (Admin only)", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User limits deleted successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),

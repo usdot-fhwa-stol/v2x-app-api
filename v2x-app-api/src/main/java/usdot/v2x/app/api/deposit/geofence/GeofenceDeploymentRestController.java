@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +34,7 @@ public class GeofenceDeploymentRestController {
     @Operation(summary = "Get all active Geofence deployments", description = "Retrieves all active Geofence deployments from the database. "
             +
             "This endpoint returns a list of all currently active Geofence deployments " +
-            "with their configuration details, geospatial information, and metadata.")
+            "with their configuration details, geospatial information, and metadata.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Geofence deployments retrieved successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
@@ -53,7 +54,7 @@ public class GeofenceDeploymentRestController {
     @Operation(summary = "Get Geofence deployment by ID", description = "Retrieves a specific Geofence deployment by its Geofence ID. "
             +
             "This endpoint returns the complete configuration and metadata " +
-            "for the specified Geofence deployment.")
+            "for the specified Geofence deployment.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Geofence deployment retrieved successfully")
     @ApiResponse(responseCode = "404", description = "Geofence deployment not found")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
@@ -79,7 +80,7 @@ public class GeofenceDeploymentRestController {
     @Operation(summary = "Get Geofence deployments by geohash", description = "Retrieves all Geofence deployments that cover a specific geohash. "
             +
             "This endpoint is useful for finding Geofences relevant to a particular " +
-            "geographical area based on geohash precision.")
+            "geographical area based on geohash precision.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Geofence deployments retrieved successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
@@ -100,7 +101,7 @@ public class GeofenceDeploymentRestController {
     @GetMapping("/user/{username}")
     @Operation(summary = "Get Geofence deployments by user", description = "Retrieves all active Geofence deployments deployed by a specific user. "
             +
-            "This endpoint is useful for user-specific Geofence management and auditing.")
+            "This endpoint is useful for user-specific Geofence management and auditing.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Geofence deployments retrieved successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
@@ -121,7 +122,7 @@ public class GeofenceDeploymentRestController {
     @GetMapping("/expired")
     @Operation(summary = "Get expired Geofence deployments", description = "Retrieves all Geofence deployments that have expired. "
             +
-            "This endpoint is useful for monitoring and debugging expiration issues.")
+            "This endpoint is useful for monitoring and debugging expiration issues.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Expired Geofence deployments retrieved successfully")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
@@ -142,7 +143,7 @@ public class GeofenceDeploymentRestController {
     @Operation(summary = "Get geohashes for a Geofence deployment", description = "Retrieves all geohashes associated with a specific Geofence deployment. "
             +
             "This endpoint is useful for understanding the geographical coverage " +
-            "of a particular Geofence deployment.")
+            "of a particular Geofence deployment.", security = @SecurityRequirement(name = "BearerAuth"))
     @ApiResponse(responseCode = "200", description = "Geohashes retrieved successfully")
     @ApiResponse(responseCode = "404", description = "Geofence deployment not found")
     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication")
