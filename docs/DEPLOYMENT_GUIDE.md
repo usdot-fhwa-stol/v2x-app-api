@@ -252,7 +252,9 @@ Ensure these ports are available and not blocked by firewall rules.
    - Change all default passwords
    - Use strong, unique passwords for all services
    - Generate secure `KEYCLOAK_CLIENT_SECRET` (32 characters)
+   - Generate secure `KEYCLOAK_ADMIN_PASSWORD` (32 characters)
    - Configure production users in Keycloak (remove default users)
+   - Follow Keycloak's guidance for [deploying in production](https://www.keycloak.org/server/configuration-production)
 
 2. **Restart Policy:**
    - Set `RESTART_POLICY=always` in `.env` for automatic restarts
