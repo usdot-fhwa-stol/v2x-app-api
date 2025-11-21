@@ -12,6 +12,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Configuration for J2735 ASN.1 codec setup.
+ */
 @Slf4j
 @Configuration
 public class CodecConfig {

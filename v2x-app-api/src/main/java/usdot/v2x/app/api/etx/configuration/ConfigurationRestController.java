@@ -25,6 +25,9 @@ import static org.springframework.http.MediaType.*;
 
 import java.util.List;
 
+/**
+ * REST controller for ETX configuration management operations.
+ */
 @RestController
 @RequestMapping("/prd/v2/configurations")
 public class ConfigurationRestController {

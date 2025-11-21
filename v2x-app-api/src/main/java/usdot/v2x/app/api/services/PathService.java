@@ -6,6 +6,9 @@ import usdot.v2x.app.api.models.dto.PathsResponse;
 import usdot.v2x.app.api.models.dto.PathOperationResult;
 import reactor.core.publisher.Mono;
 
+/**
+ * Service interface for path management operations.
+ */
 public interface PathService {
 
     /**

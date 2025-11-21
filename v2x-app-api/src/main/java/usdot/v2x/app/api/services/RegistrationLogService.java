@@ -19,6 +19,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Service for managing ETX registration logs and operations.
+ */
 @Slf4j
 @Service
 public class RegistrationLogService {

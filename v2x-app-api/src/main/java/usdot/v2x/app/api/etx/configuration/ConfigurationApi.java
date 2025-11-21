@@ -26,6 +26,10 @@ import usdot.v2x.app.api.utils.MapCoordinateConverter;
 import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
 import org.locationtech.jts.geom.Polygon;
+
+/**
+ * API client for ETX Configuration API operations.
+ */
 import java.util.HashMap;
 
 import j2735ffm.MessageFrameCodec;

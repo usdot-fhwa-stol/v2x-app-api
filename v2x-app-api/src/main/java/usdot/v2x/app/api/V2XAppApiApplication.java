@@ -10,6 +10,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+/**
+ * Main Spring Boot application class for the V2X Application API.
+ */
 @SpringBootApplication
 @EnableScheduling
 @OpenAPIDefinition(info = @Info(title = "V2X App API", version = "1.0.0", description = "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. "

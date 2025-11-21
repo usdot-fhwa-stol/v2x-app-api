@@ -4,6 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Configuration properties for Thingspace API integration.
+ */
 @Configuration
 @ConfigurationProperties(prefix = "thingspace")
 @Data

@@ -7,6 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
+/**
+ * Thread-safe token storage component for ETX authentication tokens.
+ */
 @Component
 @Slf4j
 public class TokenStore {

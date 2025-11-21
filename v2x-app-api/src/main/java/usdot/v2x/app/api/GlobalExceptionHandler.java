@@ -25,6 +25,11 @@ import java.util.HashMap;
 import java.util.Map;
 import usdot.v2x.app.api.exceptions.NoAvailableGeohashException;
 
+/**
+ * Global exception handler for centralized exception handling across all REST
+ * controllers.
+ * Converts exceptions into appropriate HTTP error responses and logs them.
+ */
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {

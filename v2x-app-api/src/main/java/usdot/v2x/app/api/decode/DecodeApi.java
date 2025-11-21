@@ -16,6 +16,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
+/**
+ * API for decoding ASN.1 encoded messages.
+ */
 @Slf4j
 @Component
 @ConditionalOnBean(MessageFrameCodec.class)

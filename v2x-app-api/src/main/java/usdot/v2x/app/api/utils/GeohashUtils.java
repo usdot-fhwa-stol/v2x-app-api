@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Utility class for geohash operations and geospatial data processing.
+ */
 @Component
 @Slf4j
 public class GeohashUtils {

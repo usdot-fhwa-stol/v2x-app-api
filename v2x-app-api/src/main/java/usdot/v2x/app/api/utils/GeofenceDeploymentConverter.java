@@ -27,6 +27,9 @@ import us.dot.its.jpo.asn.j2735.r2024.MapData.IntersectionGeometryList;
 
 import org.locationtech.jts.geom.Polygon;
 
+/**
+ * Utility class for converting between deposit request formats and geofence deployment formats.
+ */
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HexFormat;

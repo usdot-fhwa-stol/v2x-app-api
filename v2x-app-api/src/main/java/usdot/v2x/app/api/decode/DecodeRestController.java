@@ -15,6 +15,9 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * REST controller for ASN.1 message decoding operations.
+ */
 @Hidden
 @RestController
 @RequestMapping("/api/v2/decode")

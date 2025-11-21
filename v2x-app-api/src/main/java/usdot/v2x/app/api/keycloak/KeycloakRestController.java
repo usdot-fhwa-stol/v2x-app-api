@@ -18,6 +18,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+/**
+ * REST controller for Keycloak authentication operations.
+ */
 @Slf4j
 @RestController
 @RequestMapping("auth")

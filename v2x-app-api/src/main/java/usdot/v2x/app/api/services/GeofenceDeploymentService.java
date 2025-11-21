@@ -5,6 +5,9 @@ import usdot.v2x.app.api.models.geofence.GeofenceDeploymentResponse;
 
 import java.util.List;
 
+/**
+ * Service interface for geofence deployment operations.
+ */
 public interface GeofenceDeploymentService {
 
     /**

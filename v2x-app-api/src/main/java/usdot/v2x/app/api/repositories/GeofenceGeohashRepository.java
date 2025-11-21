@@ -8,6 +8,9 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/**
+ * Repository interface for GeofenceGeohash entity operations.
+ */
 @Repository
 public interface GeofenceGeohashRepository extends JpaRepository<GeofenceGeohash, Long> {
 

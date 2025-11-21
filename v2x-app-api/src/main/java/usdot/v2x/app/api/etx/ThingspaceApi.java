@@ -11,6 +11,9 @@ import reactor.core.publisher.Mono;
 
 import java.util.Base64;
 
+/**
+ * API client for Thingspace authentication operations.
+ */
 @Slf4j
 @Component
 public class ThingspaceApi {

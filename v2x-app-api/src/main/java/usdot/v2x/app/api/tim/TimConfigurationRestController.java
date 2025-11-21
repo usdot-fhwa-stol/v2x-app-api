@@ -20,6 +20,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+/**
+ * REST controller for TIM configuration operations.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/prd/v2/tim")

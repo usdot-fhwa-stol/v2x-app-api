@@ -11,6 +11,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.n52.jackson.datatype.jts.JtsModule;
 
+/**
+ * Configuration for Jackson JSON and XML serialization/deserialization.
+ */
 @Configuration
 public class JacksonConfig {
 

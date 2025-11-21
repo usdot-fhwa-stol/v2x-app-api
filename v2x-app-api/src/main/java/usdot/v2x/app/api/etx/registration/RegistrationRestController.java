@@ -28,6 +28,9 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 
+/**
+ * REST controller for ETX client registration and connection management.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/prd/v2")

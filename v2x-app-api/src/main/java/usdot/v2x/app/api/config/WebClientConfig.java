@@ -15,6 +15,9 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Configuration for Spring WebClient setup.
+ */
 @Configuration
 public class WebClientConfig {
 

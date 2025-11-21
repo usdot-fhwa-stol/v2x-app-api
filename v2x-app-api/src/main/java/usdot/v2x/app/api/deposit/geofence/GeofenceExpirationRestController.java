@@ -21,6 +21,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * REST controller for geofence expiration management operations.
+ */
 @RestController
 @RequestMapping("/prd/v2/deposit/geofence/expiration")
 @Tag(name = "Geofence Expiration", description = "Geofence expiration management endpoints")

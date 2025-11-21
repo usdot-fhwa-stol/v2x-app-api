@@ -25,6 +25,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * REST controller for user limits management operations.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/prd/v2/admin/user-limits")

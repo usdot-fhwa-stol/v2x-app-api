@@ -20,6 +20,9 @@ import java.time.Duration;
 import java.util.List;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * API client for ETX Registration API operations.
+ */
 @Slf4j
 @Component
 public class RegistrationApi {

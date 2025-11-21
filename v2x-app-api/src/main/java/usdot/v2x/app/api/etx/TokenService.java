@@ -11,6 +11,9 @@ import usdot.v2x.app.api.config.etx.ThingspaceProperties;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Service for managing ETX authentication tokens.
+ */
 @Slf4j
 @Service
 public class TokenService {

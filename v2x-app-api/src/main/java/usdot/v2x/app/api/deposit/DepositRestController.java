@@ -30,6 +30,9 @@ import static org.springframework.http.MediaType.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
+/**
+ * REST controller for V2X message deposit operations.
+ */
 @RestController
 @RequestMapping("/prd/v2/deposit")
 @Tag(name = "Deposit", description = "V2X Message Deposit endpoints for deployment to the ETX MQTT Broker")

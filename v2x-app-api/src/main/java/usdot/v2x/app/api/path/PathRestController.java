@@ -21,6 +21,9 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import jakarta.validation.Valid;
 
+/**
+ * REST controller for path management operations.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/prd/v2/paths")

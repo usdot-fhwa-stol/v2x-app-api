@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * Service implementation for path management operations.
+ */
 @Slf4j
 @Service
 public class PathServiceImpl implements PathService {

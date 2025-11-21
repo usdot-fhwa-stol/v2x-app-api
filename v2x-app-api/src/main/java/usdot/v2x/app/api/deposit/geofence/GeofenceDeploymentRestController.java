@@ -20,6 +20,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * REST controller for geofence deployment management operations.
+ */
 @RestController
 @RequestMapping("/prd/v2/deposit/geofence/deployments")
 @Tag(name = "Geofence Deployments", description = "Geofence deployment management endpoints")

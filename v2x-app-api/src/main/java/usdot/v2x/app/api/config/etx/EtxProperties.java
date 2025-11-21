@@ -8,6 +8,9 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
+/**
+ * Configuration properties for ETX integration.
+ */
 @Configuration
 @ConfigurationProperties(prefix = "etx")
 @Data

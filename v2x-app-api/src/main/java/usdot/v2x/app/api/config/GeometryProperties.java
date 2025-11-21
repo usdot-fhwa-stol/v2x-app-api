@@ -5,6 +5,9 @@ import org.springframework.context.annotation.Configuration;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * Configuration properties for geometry operations.
+ */
 @Configuration
 @ConfigurationProperties(prefix = "geometry")
 @Getter

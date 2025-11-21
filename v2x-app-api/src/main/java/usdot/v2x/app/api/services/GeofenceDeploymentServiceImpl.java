@@ -20,6 +20,9 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Service implementation for geofence deployment operations.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j

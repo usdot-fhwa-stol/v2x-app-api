@@ -10,6 +10,9 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Repository interface for GeofenceDeployment entity operations.
+ */
 @Repository
 public interface GeofenceDeploymentRepository extends JpaRepository<GeofenceDeployment, Long> {
 

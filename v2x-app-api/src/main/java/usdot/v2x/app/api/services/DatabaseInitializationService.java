@@ -10,6 +10,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Service for initializing database with default configuration data.
+ */
 @Slf4j
 @Service
 public class DatabaseInitializationService implements ApplicationRunner {

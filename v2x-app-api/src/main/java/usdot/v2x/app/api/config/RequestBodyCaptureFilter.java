@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Servlet filter for capturing and caching HTTP request bodies.
+ */
 @Component
 @Order(1)
 @Slf4j

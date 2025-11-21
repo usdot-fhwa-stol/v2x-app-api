@@ -14,6 +14,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+/**
+ * API client for Keycloak authentication operations.
+ */
 @Slf4j
 @Component
 public class KeycloakApi {
