@@ -119,15 +119,15 @@ webclient:
       multiplier: 2.0
 
 secret:
-  iss-scms-token: token
+  iss-scms-token: ${ISS_SCMS_TOKEN:token}
   s3:
-    access-key: key
-    secret-key: key
-    bucket-name: name
-    region: region
-    destination: destination
-  mapbox-access-token: mapbox_access_token
-  noaa-geomag-api-token: noaa-geomag-api-token
+    access-key: ${S3_ACCESS_KEY:key}
+    secret-key: ${S3_SECRET_KEY:key}
+    bucket-name: ${S3_BUCKET_NAME:name}
+    region: ${S3_REGION:region}
+    destination: ${S3_DESTINATION:destination}
+  mapbox-access-token: ${MAPBOX_ACCESS_TOKEN:mapbox_access_token}
+  noaa-geomag-api-token: ${NOAA_GEOMAG_API_TOKEN:noaa-geomag-api-token}
 
 # Spring Boot Actuator Configuration for Request Monitoring
 management:
@@ -147,6 +147,25 @@ logging:
   level:
     root: INFO
     usdot.v2x.app.api: ${API_LOGGING_LEVEL:DEBUG}
+    # Jackson deserialization debugging - more verbose
+    com.fasterxml.jackson: TRACE
+    com.fasterxml.jackson.databind: TRACE
+    com.fasterxml.jackson.databind.deser: TRACE
+    com.fasterxml.jackson.databind.deser.std: TRACE
+    com.fasterxml.jackson.databind.deser.std.EnumDeserializer: TRACE
+    # Spring HTTP message conversion debugging
+    org.springframework.http: DEBUG
+    org.springframework.http.converter: DEBUG
+    org.springframework.http.converter.json: DEBUG
+    org.springframework.http.converter.json.Jackson2ObjectMapperBuilder: DEBUG
+    # Spring WebFlux request/response debugging
+    org.springframework.web.reactive: DEBUG
+    org.springframework.web.reactive.function.client: DEBUG
+    org.springframework.web.server: DEBUG
+    org.springframework.web.server.adapter: DEBUG
+    # Specific package for registration models
+    usdot.v2x.app.api.models.etx.registration: DEBUG
+    usdot.v2x.app.api.etx.registration: DEBUG
 
 springdoc.api-docs.path: /api-docs
 springdoc.swagger-ui.path: /swagger-ui.html
