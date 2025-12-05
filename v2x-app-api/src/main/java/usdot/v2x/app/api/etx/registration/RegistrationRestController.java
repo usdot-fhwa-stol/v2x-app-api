@@ -13,7 +13,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
+
+// WARNING: DO NOT USE io.swagger.v3.oas.annotations.parameters.RequestBody IN THIS FILE IT CAUSES REQUEST BODY PARSING ISSUES
+// import io.swagger.v3.oas.annotations.parameters.RequestBody;
+
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -99,7 +102,7 @@ public class RegistrationRestController {
     @Operation(summary = "Register ETX client", description = "Registers a new ETX client with the system. This endpoint supports retry logic "
             +
             "for handling pending registrations. The client must provide valid client type and subtype " +
-            "information for successful registration.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Client registration information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationPostRequest.class))))
+            "information for successful registration.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Client registration information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationPostRequest.class))))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Registration successful", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationResponse.class))),
             @ApiResponse(responseCode = "400", description = "Bad request - invalid registration data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
@@ -152,7 +155,7 @@ public class RegistrationRestController {
     @Operation(summary = "Update ETX client registration", description = "Updates an existing ETX client registration. This endpoint supports retry logic "
             +
             "for handling pending registration updates. The client must provide a valid device ID " +
-            "for successful registration update.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Client registration update information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationPutRequest.class))))
+            "for successful registration update.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Client registration update information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationPutRequest.class))))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Registration update successful", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationResponse.class))),
             @ApiResponse(responseCode = "400", description = "Bad request - invalid update data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
@@ -187,7 +190,7 @@ public class RegistrationRestController {
     @Operation(summary = "Establish ETX client connection", description = "Establishes a connection for an ETX client with location and network information. "
             +
             "This endpoint is used to register device location and network connectivity for " +
-            "V2X communication.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Client connection information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConnectionPostRequest.class))))
+            "V2X communication.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Client connection information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConnectionPostRequest.class))))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Connection established successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ConnectionResponse.class))),
             @ApiResponse(responseCode = "400", description = "Bad request - invalid connection data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
@@ -214,7 +217,7 @@ public class RegistrationRestController {
             +
             "This endpoint first registers the client with the system, then establishes a connection using the returned device ID. "
             +
-            "This is a convenience endpoint that combines the functionality of both registration and connection endpoints.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @RequestBody(description = "Combined registration and connection information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationConnectionPostRequest.class))))
+            "This is a convenience endpoint that combines the functionality of both registration and connection endpoints.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Combined registration and connection information", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = RegistrationConnectionPostRequest.class))))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Registration and connection successful", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CompleteResponse.class))),
             @ApiResponse(responseCode = "400", description = "Bad request - invalid registration or connection data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
