@@ -67,6 +67,8 @@ The application consists of three main services:
    - `THINGSPACE_KEY`: Thingspace API key
    - `THINGSPACE_SECRET`: Thingspace API secret
    - `THINGSPACE_ENDPOINT`: Thingspace endpoint (default: `https://thingspace.verizon.com`)
+   - `THINGSPACE_SESSION_TOKEN_LIFESPAN`: Session token lifespan duration (default: `10m`). Supports duration formats like `10m`, `30s`, `1h`, or ISO-8601 format like `PT10M`.
+   - `TOKEN_PERIODIC_REGENERATION`: Enable periodic token regeneration to prevent expiration (default: `true`)
 
    **Database Configuration:**
    - `POSTGRES_DB`: Database name (default: `v2x_app_db`)

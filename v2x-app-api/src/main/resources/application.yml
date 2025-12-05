@@ -26,7 +26,7 @@ thingspace:
   endpoint: ${THINGSPACE_ENDPOINT:https://thingspace.verizon.com}
   key: ${THINGSPACE_KEY}
   secret: ${THINGSPACE_SECRET}
-  sessionTokenLifespanMinutes: ${TOKEN_EXPIRATION_MINUTES:10}
+  sessionTokenLifespan: ${THINGSPACE_SESSION_TOKEN_LIFESPAN:10m}
   tokenPeriodicRegenerationEnabled: ${TOKEN_PERIODIC_REGENERATION:true}
 keycloak:
   realm: ${KEYCLOAK_REALM:v2x-app}
@@ -147,25 +147,6 @@ logging:
   level:
     root: INFO
     usdot.v2x.app.api: ${API_LOGGING_LEVEL:DEBUG}
-    # Jackson deserialization debugging - more verbose
-    com.fasterxml.jackson: TRACE
-    com.fasterxml.jackson.databind: TRACE
-    com.fasterxml.jackson.databind.deser: TRACE
-    com.fasterxml.jackson.databind.deser.std: TRACE
-    com.fasterxml.jackson.databind.deser.std.EnumDeserializer: TRACE
-    # Spring HTTP message conversion debugging
-    org.springframework.http: DEBUG
-    org.springframework.http.converter: DEBUG
-    org.springframework.http.converter.json: DEBUG
-    org.springframework.http.converter.json.Jackson2ObjectMapperBuilder: DEBUG
-    # Spring WebFlux request/response debugging
-    org.springframework.web.reactive: DEBUG
-    org.springframework.web.reactive.function.client: DEBUG
-    org.springframework.web.server: DEBUG
-    org.springframework.web.server.adapter: DEBUG
-    # Specific package for registration models
-    usdot.v2x.app.api.models.etx.registration: DEBUG
-    usdot.v2x.app.api.etx.registration: DEBUG
 
 springdoc.api-docs.path: /api-docs
 springdoc.swagger-ui.path: /swagger-ui.html

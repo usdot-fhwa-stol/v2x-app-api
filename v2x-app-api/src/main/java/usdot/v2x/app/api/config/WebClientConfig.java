@@ -3,6 +3,7 @@ package usdot.v2x.app.api.config;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -11,6 +12,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.util.retry.Retry;
+
+import jakarta.annotation.PostConstruct;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -21,11 +24,23 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class WebClientConfig {
 
+    @Autowired
+    private WebClientProperties webClientProperties;
+
+    @PostConstruct
+    public void init() {
+        // Set static reference for backward compatibility with static getRetrySpec()
+        // method
+        WebClientConfig.staticWebClientProperties = webClientProperties;
+    }
+
+    private static WebClientProperties staticWebClientProperties;
+
     @Bean
     public WebClient.Builder webClientBuilder() {
-        int connectTimeout = Integer.parseInt(System.getenv().getOrDefault("WEB_CLIENT_CONNECT_TIMEOUT", "10000"));
-        int readTimeout = Integer.parseInt(System.getenv().getOrDefault("WEB_CLIENT_READ_TIMEOUT", "30000"));
-        int writeTimeout = Integer.parseInt(System.getenv().getOrDefault("WEB_CLIENT_WRITE_TIMEOUT", "10000"));
+        int connectTimeout = webClientProperties.getTimeout().getConnect();
+        int readTimeout = webClientProperties.getTimeout().getRead();
+        int writeTimeout = webClientProperties.getTimeout().getWrite();
 
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeout)
@@ -44,10 +59,25 @@ public class WebClientConfig {
         });
     }
 
+    /**
+     * Static method for backward compatibility.
+     * Uses injected WebClientProperties if available, otherwise falls back to
+     * defaults.
+     */
     public static Retry getRetrySpec() {
-        int maxAttempts = Integer.parseInt(System.getenv().getOrDefault("WEB_CLIENT_RETRY_MAX_ATTEMPTS", "3"));
-        long initialDelay = Long.parseLong(System.getenv().getOrDefault("WEB_CLIENT_RETRY_INITIAL_DELAY", "1000"));
-        long maxDelay = Long.parseLong(System.getenv().getOrDefault("WEB_CLIENT_RETRY_MAX_DELAY", "5000"));
+        WebClientProperties props = staticWebClientProperties;
+        if (props == null) {
+            // Fallback to defaults if not yet initialized (shouldn't happen in normal
+            // operation)
+            props = new WebClientProperties();
+        }
+        return createRetrySpec(props);
+    }
+
+    private static Retry createRetrySpec(WebClientProperties props) {
+        int maxAttempts = props.getRetry().getMaxAttempts();
+        long initialDelay = props.getRetry().getBackoff().getInitialDelay();
+        long maxDelay = props.getRetry().getBackoff().getMaxDelay();
 
         return Retry.backoff(maxAttempts, Duration.ofMillis(initialDelay))
                 .maxBackoff(Duration.ofMillis(maxDelay))
