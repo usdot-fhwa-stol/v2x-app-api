@@ -48,11 +48,18 @@ The application consists of three main services:
 
 2. Configure required variables in `.env`:
 
+   **Docker Configuration:**
+   - `DOCKER_HOST_IP`: Docker host IP address (used for service URLs)
+   - `COMPOSE_PROFILES`: Docker Compose profiles to use (default: `all`). Available profiles: `postgres`, `keycloak`, `v2x-app-api`, `all`
+   - `RESTART_POLICY`: Docker container restart policy (default: `"no"`). See [Docker documentation](https://docs.docker.com/engine/containers/start-containers-automatically/) for options.
+
    **Keycloak Configuration:**
-   - `KEYCLOAK_ENDPOINT`: Keycloak server URL (default: `http://localhost:8084`)
+   - `KEYCLOAK_ENDPOINT`: Keycloak server URL (default: `http://${DOCKER_HOST_IP}:8084`)
    - `KEYCLOAK_REALM`: Realm name (default: `v2x-app`)
    - `KEYCLOAK_CLIENT_NAME`: Client ID (default: `v2x-app-api`)
    - `KEYCLOAK_CLIENT_SECRET`: Client secret (generate a secure 32-character string)
+   - `KEYCLOAK_ADMIN`: Keycloak admin username (default: `admin`)
+   - `KEYCLOAK_ADMIN_PASSWORD`: Keycloak admin password
 
    **ETX Configuration:**
    - `ETX_ENABLED`: Enable ETX integration (default: `true`)
@@ -61,17 +68,23 @@ The application consists of three main services:
    - `ETX_VENDOR_USERNAME`: ETX vendor username
    - `ETX_VENDOR_PASSWORD`: ETX vendor password
    - `ETX_DEPOSITOR_VENDOR_ID`: Separate vendor ID for depositor role (defaults to `ETX_VENDOR_ID`)
+   - `GEOFENCE_CLEANUP_ENABLED`: Enable periodic cleanup of inactive TIM geofences (default: `false`)
+   - `GEOFENCE_CLEANUP_INTERVAL`: Cleanup interval duration (default: `5m`). Supports duration formats like `5m`, `30s`, `1h`, or ISO-8601 format like `PT5M`.
 
    **Thingspace Configuration:**
    - `THINGSPACE_ENABLED`: Enable Thingspace integration (default: `true`)
    - `THINGSPACE_KEY`: Thingspace API key
    - `THINGSPACE_SECRET`: Thingspace API secret
    - `THINGSPACE_ENDPOINT`: Thingspace endpoint (default: `https://thingspace.verizon.com`)
+   - `THINGSPACE_SESSION_TOKEN_LIFESPAN`: Session token lifespan duration (default: `10m`). Supports duration formats like `10m`, `30s`, `1h`, or ISO-8601 format like `PT10M`.
+   - `TOKEN_PERIODIC_REGENERATION`: Enable periodic token regeneration to prevent expiration (default: `true`)
 
    **Database Configuration:**
    - `POSTGRES_DB`: Database name (default: `v2x_app_db`)
    - `POSTGRES_USER`: Database user (default: `admin_user`)
    - `POSTGRES_PASSWORD`: Database password
+   - `SPRING_DATASOURCE_USERNAME`: Spring DataSource username (defaults to `POSTGRES_USER`)
+   - `SPRING_DATASOURCE_PASSWORD`: Spring DataSource password (defaults to `POSTGRES_PASSWORD`)
 
    **Registration Limits:**
    - `ETX_VENDOR_REGISTRATION_LIMIT`: Max registrations per vendor (default: `50`)
@@ -79,8 +92,37 @@ The application consists of three main services:
    - `ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT`: Max registrations for depositor vendor (default: `10`)
    - `ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per depositor user (default: `3`)
 
+   **Geofence Configuration:**
+   - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `100.0`)
+   - `DEFAULT_LANE_WIDTH_CM`: Default lane width in centimeters (default: `1500.0`)
+   - `GEOFENCE_GEOHASH_PRECISION`: Geohash precision for geofence generation (default: `7`). This determines the spatial resolution of geohash-based geofences. See [Geohash precision documentation](https://en.wikipedia.org/wiki/Geohash#Digits_and_precision_in_km) for details on how precision affects geographic area coverage.
+   - `GEOFENCE_LIMITS_MAX_GEOHASHES`: Maximum number of geohashes allowed per geofence deployment (default: `500`)
+   - `GEOFENCE_CLEANUP_ENABLED`: Enable periodic cleanup of inactive TIM geofences (default: `false`)
+   - `GEOFENCE_CLEANUP_INTERVAL`: Cleanup interval duration (default: `5m`). Supports duration formats like `5m`, `30s`, `1h`, or ISO-8601 format like `PT5M`.
+   - `GEOFENCE_EXPIRATION_CLEANUP_ENABLED`: Enable cleanup of expired geofences (default: `true`)
+   - `GEOFENCE_EXPIRATION_CLEANUP_INTERVAL`: Expiration cleanup interval duration (default: `5m`). Supports duration formats like `5m`, `30s`, `1h`, or ISO-8601 format like `PT5M`.
+   - `GEOFENCE_EXPIRATION_GRACE_PERIOD`: Grace period for geofence expiration (default: `2h`). Supports duration formats like `2h`, `30m`, `1d`, or ISO-8601 format like `PT2H`, `PT30M`, `P1D`.
+
    **Deployment Mode:**
-   - `DEPLOYMENT_MODE`: `ETX_CONFIGURATION_API` (default) or `GEOFENCE_MQTT`
+   - `DEPOSIT_MODE`: Deployment mode for TIM messages (default: `ETX_CONFIGURATION_API`). Options: `ETX_CONFIGURATION_API` (use ETX Configuration API for deployments) or `GEOFENCE_MQTT` (store in database for MQTT broker distribution)
+
+   **TIM Configuration:**
+   - `TIM_CONFIG_FILE_PATH`: Path to TIM configuration file (default: `/tim_config_files/tim-config.json`). Use full system path if debugging in IDE, otherwise use relative path to the project root.
+   - `TIM_ICONS_DIRECTORY`: Directory path for TIM icons (default: `/tim_config_files/tim-icons`)
+
+   **Secret Configuration:**
+   - `ISS_SCMS_TOKEN`: ISS SCMS token
+   - `S3_ACCESS_KEY`: AWS S3 access key
+   - `S3_SECRET_KEY`: AWS S3 secret key
+   - `S3_BUCKET_NAME`: AWS S3 bucket name
+   - `S3_REGION`: AWS S3 region
+   - `S3_DESTINATION`: AWS S3 destination path
+   - `MAPBOX_ACCESS_TOKEN`: Mapbox access token
+   - `NOAA_GEOMAG_API_TOKEN`: NOAA Geomagnetic API token
+
+   **Logging Configuration:**
+   - `KC_LOGGING_LEVEL`: Keycloak logging level (default: `"WARN"`). Options: `"ALL"`, `"FATAL"`, `"OFF"`, `"TRACE"`, `"WARN"`
+   - `API_LOGGING_LEVEL`: API logging level (default: `INFO`). Options: `"TRACE"`, `"DEBUG"`, `"INFO"`, `"SUCCESS"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`
 
 ### Docker Compose Profiles
 
@@ -92,7 +134,7 @@ Control which services start using profiles:
 
 Example:
 ```bash
-COMPOSE_PROFILES=v2x-app-api docker compose up
+docker compose up COMPOSE_PROFILES=v2x-app-api
 ```
 
 ## Building and Running
@@ -135,10 +177,10 @@ docker compose down
    Or use VS Code launch configuration: "Java V2X App API"
 
 4. **Access the API**:
-   - API: `http://localhost:8080`
-   - Swagger UI: `http://localhost:8080/swagger-ui.html`
-   - API Docs: `http://localhost:8080/api-docs`
-   - Keycloak: `http://localhost:8084`
+   - API: [http://localhost:8080](http://localhost:8080)
+   - Swagger UI: [http://localhost:8080/swagger-ui.html](`http://localhost:8080/swagger-ui.html`)
+   - API Docs: [http://localhost:8080/api-docs](http://localhost:8080/api-docs)
+   - Keycloak: [http://localhost:8084](http://localhost:8084)
 
 ## API Endpoints
 
@@ -248,7 +290,7 @@ The native library (`libasnapplication.so` / `asnapplication.dll`) is required a
 ### TIM Configuration
 - ITIS phrase management
 - Icon metadata and versioning
-- Geohash precision configuration
+- Geohash precision configuration (see [Geohash precision documentation](https://en.wikipedia.org/wiki/Geohash#Digits_and_precision_in_km))
 - Expiration grace periods
 
 ### Path Management

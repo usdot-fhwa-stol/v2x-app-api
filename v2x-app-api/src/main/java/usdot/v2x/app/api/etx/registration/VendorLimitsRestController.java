@@ -3,6 +3,7 @@ package usdot.v2x.app.api.etx.registration;
 import usdot.v2x.app.api.models.VendorLimits;
 import usdot.v2x.app.api.models.dto.VendorLimitsRequest;
 import usdot.v2x.app.api.models.dto.VendorLimitsResponse;
+import usdot.v2x.app.api.repositories.VendorLimitsRepository;
 import usdot.v2x.app.api.services.VendorLimitsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -36,6 +37,9 @@ public class VendorLimitsRestController {
 
     @Autowired
     private VendorLimitsService vendorLimitsService;
+
+    @Autowired
+    private VendorLimitsRepository vendorLimitsRepository;
 
     /**
      * Get all vendor limits
@@ -78,11 +82,12 @@ public class VendorLimitsRestController {
     public ResponseEntity<VendorLimitsResponse> getVendorLimitsByVendorId(
             @Parameter(description = "Vendor ID to get limits for", required = true, example = "EtxVendor") @PathVariable("vendorId") String vendorId) {
         try {
-            // For now, we'll return default limits if not found
-            // In a real implementation, you might want to return 404
-            VendorLimits vendorLimits = vendorLimitsService.getVendorLimits(vendorId, 50); // Default limit
-            VendorLimitsResponse response = VendorLimitsResponse.fromEntity(vendorLimits);
-            return ResponseEntity.ok(response);
+            return vendorLimitsRepository.findByVendorId(vendorId)
+                    .map(vendorLimits -> {
+                        VendorLimitsResponse response = VendorLimitsResponse.fromEntity(vendorLimits);
+                        return ResponseEntity.ok(response);
+                    })
+                    .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
             log.error("Failed to get vendor limits for vendor {}: {}", vendorId, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

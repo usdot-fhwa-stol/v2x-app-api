@@ -12,6 +12,26 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Servlet filter for capturing and caching HTTP request bodies.
+ * 
+ * <p>
+ * This filter enables the request body to be read multiple times, which is
+ * necessary
+ * because servlet request input streams can typically only be read once. The
+ * cached body
+ * is primarily used by {@link usdot.v2x.app.api.services.ErrorLoggingService}
+ * to include
+ * request body content in error logs that are persisted to the database for
+ * debugging purposes.
+ * 
+ * <p>
+ * The filter only captures request bodies for POST/PUT requests to API
+ * endpoints
+ * (paths starting with /prd/, /api/, or /auth/) to minimize memory overhead.
+ * 
+ * <p>
+ * The cached body can be retrieved using the static
+ * {@link #getRequestBody(HttpServletRequest)}
+ * method, which returns null if the request was not processed by this filter.
  */
 @Component
 @Order(1)
@@ -100,7 +120,17 @@ public class RequestBodyCaptureFilter implements Filter {
     }
 
     /**
-     * Static method to get request body from any HttpServletRequest
+     * Static method to retrieve the cached request body from an HttpServletRequest.
+     * 
+     * <p>
+     * This method is used by {@link usdot.v2x.app.api.services.ErrorLoggingService}
+     * to extract the request body for inclusion in error logs. Returns null if the
+     * request was not processed by this filter (i.e., not a POST/PUT request to an
+     * API endpoint).
+     * 
+     * @param request the HttpServletRequest, which may be a
+     *                CachedBodyHttpServletRequest
+     * @return the cached request body as a String, or null if not available
      */
     public static String getRequestBody(HttpServletRequest request) {
         if (request instanceof CachedBodyHttpServletRequest) {

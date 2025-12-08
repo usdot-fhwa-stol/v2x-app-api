@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -32,7 +33,7 @@ class TokenServiceTest {
     @BeforeEach
     void setUp() {
         ThingspaceProperties properties = new ThingspaceProperties();
-        properties.setSessionTokenLifespanMinutes(60.0);
+        properties.setSessionTokenLifespan(Duration.ofMinutes(60));
         properties.setEnabled(true);
         tokenService = new TokenService(properties, thingspaceApi, tokenStore);
     }
@@ -122,7 +123,7 @@ class TokenServiceTest {
     void whenThingspaceDisabled_thenReturnTokenStoreWithoutRefresh() {
         // Given
         ThingspaceProperties disabledProperties = new ThingspaceProperties();
-        disabledProperties.setSessionTokenLifespanMinutes(60.0);
+        disabledProperties.setSessionTokenLifespan(Duration.ofMinutes(60));
         disabledProperties.setEnabled(false);
         TokenService disabledTokenService = new TokenService(disabledProperties, thingspaceApi, tokenStore);
 
@@ -142,7 +143,7 @@ class TokenServiceTest {
     void whenThingspaceDisabled_thenSkipPeriodicRefresh() {
         // Given
         ThingspaceProperties disabledProperties = new ThingspaceProperties();
-        disabledProperties.setSessionTokenLifespanMinutes(60.0);
+        disabledProperties.setSessionTokenLifespan(Duration.ofMinutes(60));
         disabledProperties.setEnabled(false);
         TokenService disabledTokenService = new TokenService(disabledProperties, thingspaceApi, tokenStore);
 

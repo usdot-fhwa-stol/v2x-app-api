@@ -8,8 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import usdot.v2x.app.api.config.etx.ThingspaceProperties;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Service for managing ETX authentication tokens.
@@ -20,13 +20,13 @@ public class TokenService {
 
     private final ThingspaceApi thingspaceApi;
     private final TokenStore tokenStore;
-    private final Double sessionTokenLifespanMinutes;
+    private final Duration sessionTokenLifespan;
     private final Boolean enabled;
 
     public TokenService(ThingspaceProperties thingspaceProperties, ThingspaceApi thingspaceApi, TokenStore tokenStore) {
         this.thingspaceApi = thingspaceApi;
         this.tokenStore = tokenStore;
-        this.sessionTokenLifespanMinutes = thingspaceProperties.getSessionTokenLifespanMinutes();
+        this.sessionTokenLifespan = thingspaceProperties.getSessionTokenLifespan();
         this.enabled = thingspaceProperties.getEnabled();
     }
 
@@ -41,7 +41,7 @@ public class TokenService {
                             Instant.now().plusSeconds(accessToken.getExpires_in()));
                     return thingspaceApi.generateSessionToken(accessToken.getAccess_token()).map(sessionToken -> {
                         tokenStore.setSessionToken(sessionToken.getSessionToken(),
-                                Instant.now().plusSeconds(sessionTokenLifespanMinutes.longValue() * 60));
+                                Instant.now().plus(sessionTokenLifespan));
                         return tokenStore;
                     });
                 })
@@ -63,7 +63,7 @@ public class TokenService {
         }
     }
 
-    @Scheduled(fixedRateString = "${thingspace.sessionTokenLifespanMinutes}", timeUnit = TimeUnit.MINUTES)
+    @Scheduled(fixedRateString = "${thingspace.sessionTokenLifespan}")
     @ConditionalOnProperty(value = { "thingspace.tokenPeriodicRegenerationEnabled" }, havingValue = "true")
     public void refreshTokensPeriodically() {
         if (!enabled) {

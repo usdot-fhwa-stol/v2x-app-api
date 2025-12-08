@@ -1,7 +1,5 @@
 package usdot.v2x.app.api.etx.configuration;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-
 import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationClearGeofence;
 import lombok.extern.slf4j.Slf4j;
@@ -12,12 +10,15 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Service for periodically cleaning up inactive TIM geofences.
- * This service runs every 5 minutes and clears geofences containing inactive
- * TIM messages.
+ * This service runs at a configurable interval and clears geofences containing
+ * inactive
+ * TIM messages. The interval is configured via
+ * {@code etx.configuration.cleanup.interval}
+ * and supports Spring Boot duration format (e.g., "5m", "30s", "1h") or
+ * ISO-8601 format.
  */
 @Slf4j
 @Service
@@ -32,7 +33,7 @@ public class ConfigurationCleanupService {
         this.configurationApi = configurationApi;
     }
 
-    @Scheduled(fixedRateString = "${etx.configuration.cleanup.interval-minutes}", timeUnit = TimeUnit.MINUTES)
+    @Scheduled(fixedRateString = "${etx.configuration.cleanup.interval}")
     @ConditionalOnProperty(value = { "etx.configuration.cleanup.enabled" }, havingValue = "true")
     public void clearInactiveTimGeofences() {
         if (!enabled) {
@@ -45,16 +46,13 @@ public class ConfigurationCleanupService {
             ConfigurationClearGeofence request = new ConfigurationClearGeofence();
             request.setClearTimOnly(true);
 
-            List<String> clearedIds = configurationApi.clearGeofences(request).getBody();
+            List<String> clearedIds = configurationApi.clearGeofences(request).block().getBody();
 
             if (clearedIds != null && !clearedIds.isEmpty()) {
                 log.info("Successfully cleared {} inactive TIM geofences: {}", clearedIds.size(), clearedIds);
             } else {
                 log.debug("No inactive TIM geofences found to clear");
             }
-
-        } catch (JsonProcessingException e) {
-            log.error("Failed to process geofence data during cleanup: {}", e.getMessage(), e);
         } catch (Exception e) {
             log.error("Unexpected error during geofence cleanup: {}", e.getMessage(), e);
             // Don't rethrow - let the scheduled task continue running

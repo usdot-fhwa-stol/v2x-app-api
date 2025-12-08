@@ -588,9 +588,14 @@ public class ConfigurationApiTest {
                 .thenReturn(Mono.just(List.of())) // For getGeofences call
                 .thenReturn(Mono.just(new ConfigurationGeofenceResponse())); // For createGeofence call
 
-        ResponseEntity<Void> response = configurationApi.deposit(request);
+        Mono<ResponseEntity<Void>> responseMono = configurationApi.deposit(request);
 
-        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        StepVerifier.create(responseMono)
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
 
         // Verify the geofence creation
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
@@ -621,19 +626,21 @@ public class ConfigurationApiTest {
         String xer = xmlMapper.writeValueAsString(messageFrame);
         when(codec.uperToXer(any(byte[].class))).thenReturn(xer);
 
-        assertThrows(ErrorResponseException.class, () -> {
-            configurationApi.deposit(request);
-        });
+        Mono<ResponseEntity<Void>> responseMono = configurationApi.deposit(request);
+        StepVerifier.create(responseMono)
+                .expectError(ErrorResponseException.class)
+                .verify();
     }
 
     @Test
-    public void testDeposit_TIM_InvalidHex() {
+    public void testDeposit_TIM_InvalidHex() throws Exception {
         DepositRequest request = new DepositRequest();
         request.setAsn1Hex("INVALID_HEX");
 
-        assertThrows(ErrorResponseException.class, () -> {
-            configurationApi.deposit(request);
-        });
+        Mono<ResponseEntity<Void>> responseMono = configurationApi.deposit(request);
+        StepVerifier.create(responseMono)
+                .expectError(ErrorResponseException.class)
+                .verify();
     }
 
     @Test
@@ -683,9 +690,14 @@ public class ConfigurationApiTest {
                 .thenReturn(Mono.just(List.of())) // For getGeofences call
                 .thenReturn(Mono.just(new ConfigurationGeofenceResponse())); // For createGeofence call
 
-        ResponseEntity<Void> response = configurationApi.deposit(request);
+        Mono<ResponseEntity<Void>> responseMono = configurationApi.deposit(request);
 
-        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        StepVerifier.create(responseMono)
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
 
         // Verify the geofence creation with deployment region
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
@@ -754,9 +766,14 @@ public class ConfigurationApiTest {
         ConfigurationClearGeofence request = new ConfigurationClearGeofence();
         request.setClearTimOnly(true);
 
-        ResponseEntity<List<String>> response = configurationApi.clearGeofences(request);
+        Mono<ResponseEntity<List<String>>> responseMono = configurationApi.clearGeofences(request);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        StepVerifier.create(responseMono)
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
 
         // Verify that deleteGeofence was called only for the TIM geofence
         verify(webClient, times(1)).delete(); // Once for the TIM geofence
@@ -789,9 +806,14 @@ public class ConfigurationApiTest {
         ConfigurationClearGeofence request = new ConfigurationClearGeofence();
         request.setClearTimOnly(false);
 
-        ResponseEntity<List<String>> response = configurationApi.clearGeofences(request);
+        Mono<ResponseEntity<List<String>>> responseMono = configurationApi.clearGeofences(request);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        StepVerifier.create(responseMono)
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
 
         // Verify that deleteGeofence was called for both geofences
         verify(webClient, times(2)).delete(); // Once for each geofence

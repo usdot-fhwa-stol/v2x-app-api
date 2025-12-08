@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Duration;
+
 /**
  * Configuration properties for Thingspace API integration.
  */
@@ -15,6 +17,11 @@ public class ThingspaceProperties {
     private String endpoint;
     private String key;
     private String secret;
-    private Double sessionTokenLifespanMinutes;
+    /**
+     * Session token lifespan duration. Supports Spring Boot duration format (e.g.,
+     * "10m", "30s", "1h")
+     * or ISO-8601 duration format (e.g., "PT10M", "PT30S", "PT1H").
+     */
+    private Duration sessionTokenLifespan;
     private Boolean tokenPeriodicRegenerationEnabled;
 }

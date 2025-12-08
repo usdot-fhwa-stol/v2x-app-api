@@ -88,7 +88,7 @@ public class DepositRestController {
                             "ConfigurationApi is not available. Codec is disabled for OpenAPI generation.");
                     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(errorResponse);
                 }
-                return configurationApi.deposit(request);
+                return configurationApi.deposit(request).block();
             } else if (depositProperties.getMode() == DepositProperties.Mode.GEOFENCE_MQTT) {
                 // Convert the configuration request to Geofence deployment request
                 GeofenceDeploymentRequest geofenceRequest = geofenceDeploymentConverter
