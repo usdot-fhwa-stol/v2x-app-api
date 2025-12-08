@@ -1,6 +1,5 @@
 package usdot.v2x.app.api.etx.configuration;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofence;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceResponse;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceSummary;
@@ -142,8 +141,7 @@ public class ConfigurationRestController {
                     @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
             })
     public ResponseEntity<List<String>> clearGeofences(
-            @Parameter(description = "Criteria for clearing geofences", required = true) @RequestBody ConfigurationClearGeofence request)
-            throws JsonProcessingException {
-        return configurationApi.clearGeofences(request);
+            @Parameter(description = "Criteria for clearing geofences", required = true) @RequestBody ConfigurationClearGeofence request) {
+        return configurationApi.clearGeofences(request).block();
     }
 }

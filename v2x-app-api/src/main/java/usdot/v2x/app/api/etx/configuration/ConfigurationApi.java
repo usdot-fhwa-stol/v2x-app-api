@@ -35,7 +35,9 @@ import java.util.HashMap;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -130,8 +132,8 @@ public class ConfigurationApi {
         headers.set("Authorization", "Bearer " + accessToken);
         headers.set("SessionToken", sessionToken);
         headers.set("VendorID", etxVendorId);
-        headers.set("Content-Type", "application/json");
-        headers.set("Accept", "application/json");
+        headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+        headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
     }
 
     /**
@@ -257,18 +259,20 @@ public class ConfigurationApi {
     /**
      * Creates or updates a geofence based on whether it already exists
      */
-    private void createOrUpdateGeofenceIfExists(String name, ConfigurationGeofence geofence) {
-        List<ConfigurationGeofenceSummary> existingGeofences = getGeofences().block();
-        ConfigurationGeofenceSummary existing = existingGeofences.stream()
-                .filter(g -> g.getName().equals(name))
-                .findFirst()
-                .orElse(null);
+    private Mono<Void> createOrUpdateGeofenceIfExists(String name, ConfigurationGeofence geofence) {
+        return getGeofences()
+                .flatMap(existingGeofences -> {
+                    ConfigurationGeofenceSummary existing = existingGeofences.stream()
+                            .filter(g -> g.getName().equals(name))
+                            .findFirst()
+                            .orElse(null);
 
-        if (existing != null) {
-            updateGeofence(existing.getId(), geofence).block();
-        } else {
-            createGeofence(geofence).block();
-        }
+                    if (existing != null) {
+                        return updateGeofence(existing.getId(), geofence).then();
+                    } else {
+                        return createGeofence(geofence).then();
+                    }
+                });
     }
 
     public Mono<List<ConfigurationGeofenceSummary>> getGeofences() {
@@ -278,7 +282,7 @@ public class ConfigurationApi {
                     headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
                     headers.set("SessionToken", tokenStore.getSessionToken());
                     headers.set("VendorID", etxVendorId);
-                    headers.set("Accept", "application/json");
+                    headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
                 })
                 .exchangeToMono(response -> switch (response.statusCode()) {
                     case HttpStatus.OK ->
@@ -366,46 +370,81 @@ public class ConfigurationApi {
                 }));
     }
 
-    public ResponseEntity<Void> deposit(DepositRequest request) throws JsonProcessingException {
-        MessageFrame<?> messageFrame = parseMessageFrame(request.getAsn1Hex());
-
-        // Extract geofence from message if override geofence is not provided
-        GeofenceFeatureCollection deploymentRegion = request.getOverrideGeofence();
-        if (deploymentRegion == null) {
-            deploymentRegion = extractGeofenceFromMessage(messageFrame);
-        }
-
-        return createOrUpdateGeofenceWithDeploymentRegion(request, messageFrame, deploymentRegion);
+    public Mono<ResponseEntity<Void>> deposit(DepositRequest request) {
+        return Mono.fromCallable(() -> parseMessageFrame(request.getAsn1Hex()))
+                .flatMap(messageFrame -> {
+                    // Extract geofence from message if override geofence is not provided
+                    GeofenceFeatureCollection deploymentRegion = request.getOverrideGeofence();
+                    if (deploymentRegion == null) {
+                        try {
+                            deploymentRegion = extractGeofenceFromMessage(messageFrame);
+                        } catch (ErrorResponseException e) {
+                            return Mono.error(e);
+                        }
+                    }
+                    return createOrUpdateGeofenceWithDeploymentRegion(request, messageFrame, deploymentRegion);
+                })
+                .onErrorMap(Exception.class, e -> {
+                    if (e instanceof ErrorResponseException) {
+                        return e;
+                    }
+                    log.error("Failed to process deposit request", e);
+                    return new ErrorResponseException(
+                            new ErrorResponse("Failed to process deposit request", e.getMessage()),
+                            HttpStatus.INTERNAL_SERVER_ERROR);
+                });
     }
 
-    private ResponseEntity<Void> createOrUpdateGeofenceWithDeploymentRegion(
+    private Mono<ResponseEntity<Void>> createOrUpdateGeofenceWithDeploymentRegion(
             DepositRequest request,
             MessageFrame<?> messageFrame,
-            GeofenceFeatureCollection deploymentRegion) throws JsonProcessingException {
+            GeofenceFeatureCollection deploymentRegion) {
 
-        MessageInfo messageInfo;
-        if (messageFrame instanceof TravelerInformationMessageFrame) {
-            messageInfo = extractTimMessageInfo((TravelerInformationMessageFrame) messageFrame);
-        } else if (messageFrame instanceof MapDataMessageFrame) {
-            messageInfo = extractMapMessageInfo((MapDataMessageFrame) messageFrame);
-        } else {
-            throw new ErrorResponseException(
-                    new ErrorResponse("Invalid message type", "invalid message type"),
-                    HttpStatus.UNPROCESSABLE_ENTITY);
-        }
-
-        return createOrUpdateGeofence(request, messageInfo.name, deploymentRegion,
-                messageInfo.startYear, messageInfo.startTimeMinutes, messageInfo.durationTime, messageInfo.messageType);
+        return extractMessageInfo(messageFrame)
+                .flatMap(messageInfo -> createOrUpdateGeofence(request, messageInfo.name, deploymentRegion,
+                        messageInfo.startYear, messageInfo.startTimeMinutes, messageInfo.durationTime,
+                        messageInfo.messageType));
     }
 
-    private ResponseEntity<Void> createOrUpdateGeofence(
+    /**
+     * Extracts message information from a message frame
+     */
+    private Mono<MessageInfo> extractMessageInfo(MessageFrame<?> messageFrame) {
+        if (messageFrame instanceof TravelerInformationMessageFrame) {
+            return Mono.fromCallable(() -> extractTimMessageInfo((TravelerInformationMessageFrame) messageFrame))
+                    .onErrorMap(Exception.class, e -> {
+                        if (e instanceof ErrorResponseException) {
+                            return e;
+                        }
+                        return new ErrorResponseException(
+                                new ErrorResponse("Failed to extract TIM message info", e.getMessage()),
+                                HttpStatus.UNPROCESSABLE_ENTITY);
+                    });
+        } else if (messageFrame instanceof MapDataMessageFrame) {
+            return Mono.fromCallable(() -> extractMapMessageInfo((MapDataMessageFrame) messageFrame))
+                    .onErrorMap(Exception.class, e -> {
+                        if (e instanceof ErrorResponseException) {
+                            return e;
+                        }
+                        return new ErrorResponseException(
+                                new ErrorResponse("Failed to extract MAP message info", e.getMessage()),
+                                HttpStatus.UNPROCESSABLE_ENTITY);
+                    });
+        } else {
+            return Mono.error(new ErrorResponseException(
+                    new ErrorResponse("Invalid message type", "invalid message type"),
+                    HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+    }
+
+    private Mono<ResponseEntity<Void>> createOrUpdateGeofence(
             DepositRequest request,
             String name,
             GeofenceFeatureCollection deploymentRegion,
             long startYear,
             long startTimeMinutes,
             long durationTime,
-            String messageType) throws JsonProcessingException {
+            String messageType) {
 
         String base64Asn1 = hexToBase64(request.getAsn1Hex());
         GenericMessage message = createGenericMessage(request, messageType, base64Asn1, startYear, startTimeMinutes,
@@ -413,32 +452,39 @@ public class ConfigurationApi {
         ConfigurationGeofence geofence = createConfigurationGeofence(name, request.getAsn1Hex(), deploymentRegion,
                 message);
 
-        createOrUpdateGeofenceIfExists(name, geofence);
-        return ResponseEntity.noContent().build();
+        return createOrUpdateGeofenceIfExists(name, geofence)
+                .thenReturn(ResponseEntity.noContent().build());
     }
 
-    public ResponseEntity<List<String>> clearGeofences(ConfigurationClearGeofence config)
-            throws JsonProcessingException {
-        List<ConfigurationGeofenceSummary> geofences = getGeofences().block();
-        if (geofences == null) {
-            throw new ErrorResponseException(
-                    new ErrorResponse("Failed to get geofences list", "failed to get geofences list"),
-                    HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+    public Mono<ResponseEntity<List<String>>> clearGeofences(ConfigurationClearGeofence config) {
+        return getGeofences()
+                .flatMap(geofences -> validateGeofencesList(geofences)
+                        .flatMap(validGeofences -> selectClearingStrategy(config, validGeofences)
+                                .map(ResponseEntity::ok)));
+    }
 
-        List<String> clearedIds;
+    private Mono<List<ConfigurationGeofenceSummary>> validateGeofencesList(
+            List<ConfigurationGeofenceSummary> geofences) {
+        if (geofences == null) {
+            return Mono.error(new ErrorResponseException(
+                    new ErrorResponse("Failed to get geofences list", "failed to get geofences list"),
+                    HttpStatus.INTERNAL_SERVER_ERROR));
+        }
+        return Mono.just(geofences);
+    }
+
+    private Mono<List<String>> selectClearingStrategy(ConfigurationClearGeofence config,
+            List<ConfigurationGeofenceSummary> geofences) {
         if (config.isClearTimOnly()) {
             log.debug("Clearing active TIM geofences");
-            clearedIds = clearActiveTimGeofences(geofences);
+            return clearActiveTimGeofences(geofences);
         } else {
             log.debug("Clearing all geofences");
-            clearedIds = clearAllGeofences(geofences);
+            return clearAllGeofences(geofences);
         }
-
-        return ResponseEntity.ok(clearedIds);
     }
 
-    private List<String> clearAllGeofences(List<ConfigurationGeofenceSummary> geofences) {
+    private Mono<List<String>> clearAllGeofences(List<ConfigurationGeofenceSummary> geofences) {
         return Flux.fromIterable(geofences)
                 .parallel()
                 .flatMap(geofence -> deleteGeofence(geofence.getId())
@@ -448,12 +494,10 @@ public class ConfigurationApi {
                             return Mono.empty();
                         }))
                 .sequential()
-                .collectList()
-                .block();
+                .collectList();
     }
 
-    private List<String> clearActiveTimGeofences(List<ConfigurationGeofenceSummary> geofences)
-            throws JsonProcessingException {
+    private Mono<List<String>> clearActiveTimGeofences(List<ConfigurationGeofenceSummary> geofences) {
         return Flux.fromIterable(geofences)
                 .filter(geofence -> geofence.getName().contains("TIM"))
                 .flatMap(geofence -> {
@@ -468,13 +512,14 @@ public class ConfigurationApi {
                                         return Mono.empty();
                                     });
                         }
+                    } catch (JsonProcessingException e) {
+                        log.error("Failed to process geofence {}: {}", geofence.getId(), e.getMessage());
                     } catch (Exception e) {
                         log.error("Failed to process geofence {}: {}", geofence.getId(), e.getMessage());
                     }
                     return Mono.empty();
                 })
-                .collectList()
-                .block();
+                .collectList();
     }
 
     protected boolean isTimMessageActive(String asn1) throws JsonProcessingException {
@@ -510,50 +555,42 @@ public class ConfigurationApi {
     /**
      * Deletes geofences by identifier (TIM packet ID or intersection ID)
      */
-    public ResponseEntity<List<String>> deleteGeofencesByIdentifier(String identifier) {
-        List<ConfigurationGeofenceSummary> geofences = getGeofences().block();
-        if (geofences == null) {
-            throw new ErrorResponseException(
-                    new ErrorResponse("Failed to get geofences list", "failed to get geofences list"),
-                    HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+    public Mono<ResponseEntity<List<String>>> deleteGeofencesByIdentifier(String identifier) {
+        return getGeofences()
+                .flatMap(geofences -> validateGeofencesList(geofences)
+                        .flatMap(validGeofences -> deleteGeofencesByName(validGeofences, "TIM_" + identifier)
+                                .flatMap(deletedIds -> {
+                                    if (!deletedIds.isEmpty()) {
+                                        return Mono.just(ResponseEntity.ok(deletedIds));
+                                    }
+                                    return deleteGeofencesByName(validGeofences, "MAP_" + identifier)
+                                            .flatMap(mapDeletedIds -> {
+                                                if (mapDeletedIds.isEmpty()) {
+                                                    return Mono.error(new ErrorResponseException(
+                                                            new ErrorResponse("No geofences found with identifier: "
+                                                                    + identifier
+                                                                    + " (tried as TIM packet ID and intersection ID)",
+                                                                    "geofence not found"),
+                                                            HttpStatus.NOT_FOUND));
+                                                }
+                                                return Mono.just(ResponseEntity.ok(mapDeletedIds));
+                                            });
+                                })));
+    }
 
-        // Try to match as TIM packet ID first
-        String timGeofenceName = "TIM_" + identifier;
-        List<String> deletedIds = Flux.fromIterable(geofences)
-                .filter(geofence -> geofence.getName().equals(timGeofenceName))
+    /**
+     * Deletes geofences matching a specific name pattern
+     */
+    private Mono<List<String>> deleteGeofencesByName(List<ConfigurationGeofenceSummary> geofences, String name) {
+        return Flux.fromIterable(geofences)
+                .filter(geofence -> geofence.getName().equals(name))
                 .flatMap(geofence -> deleteGeofence(geofence.getId())
                         .thenReturn(geofence.getId())
                         .onErrorResume(e -> {
                             log.error("Failed to delete geofence {}: {}", geofence.getId(), e.getMessage());
                             return Mono.empty();
                         }))
-                .collectList()
-                .block();
-
-        // If no TIM geofences found, try to match as intersection ID
-        if (deletedIds.isEmpty()) {
-            String mapGeofenceName = "MAP_" + identifier;
-            deletedIds = Flux.fromIterable(geofences)
-                    .filter(geofence -> geofence.getName().equals(mapGeofenceName))
-                    .flatMap(geofence -> deleteGeofence(geofence.getId())
-                            .thenReturn(geofence.getId())
-                            .onErrorResume(e -> {
-                                log.error("Failed to delete geofence {}: {}", geofence.getId(), e.getMessage());
-                                return Mono.empty();
-                            }))
-                    .collectList()
-                    .block();
-        }
-
-        if (deletedIds.isEmpty()) {
-            throw new ErrorResponseException(
-                    new ErrorResponse("No geofences found with identifier: " + identifier
-                            + " (tried as TIM packet ID and intersection ID)", "geofence not found"),
-                    HttpStatus.NOT_FOUND);
-        }
-
-        return ResponseEntity.ok(deletedIds);
+                .collectList();
     }
 
     /**

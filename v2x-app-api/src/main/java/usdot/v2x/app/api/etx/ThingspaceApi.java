@@ -5,6 +5,9 @@ import usdot.v2x.app.api.config.etx.ThingspaceProperties;
 import usdot.v2x.app.api.models.etx.AuthToken;
 import usdot.v2x.app.api.models.etx.SessionToken;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -42,7 +45,7 @@ public class ThingspaceApi {
                 .uri("/api/ts/v1/oauth2/token")
                 .headers(headers -> {
                     headers.set("Authorization", "Basic " + encodedThingspaceCredentials);
-                    headers.set("Content-Type", "application/x-www-form-urlencoded");
+                    headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE);
                 })
                 .bodyValue("grant_type=client_credentials")
                 .retrieve()
@@ -56,7 +59,7 @@ public class ThingspaceApi {
                 .uri("/api/m2m/v1/session/login")
                 .headers(headers -> {
                     headers.set("Authorization", "Bearer " + accessToken);
-                    headers.set("Content-Type", "application/json");
+                    headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
                 })
                 .bodyValue("{" +
                         "\"username\":\"" + etxUsername + "\"," +

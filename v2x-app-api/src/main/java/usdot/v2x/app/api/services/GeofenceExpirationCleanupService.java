@@ -3,18 +3,22 @@ package usdot.v2x.app.api.services;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.concurrent.TimeUnit;
+import usdot.v2x.app.api.config.GeofenceProperties;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+
 /**
  * Scheduled service for automatically deactivating expired Geofence
  * deployments.
- * This service runs at configurable intervals to check for and deactivate
- * Geofence deployments that have passed their expiration time.
+ * This service runs at a configurable interval and clears geofences that have
+ * passed their expiration time. The interval is configured via
+ * {@code geofence.expiration.cleanup.interval}
+ * and supports Spring Boot duration format (e.g., "5m", "30s", "1h") or
+ * ISO-8601 format.
  */
 @Service
 @RequiredArgsConstructor
@@ -22,17 +26,15 @@ import org.springframework.stereotype.Service;
 public class GeofenceExpirationCleanupService {
 
     private final GeofenceDeploymentService geofenceDeploymentService;
+    private final GeofenceProperties geofenceProperties;
 
-    @Value("${geofence.expiration.cleanup.interval-minutes:5}")
-    private int intervalMinutes;
-
-    @Value("${geofence.expiration.grace-period-hours:2}")
-    private int gracePeriodHours;
-
-    @Scheduled(fixedRateString = "${geofence.expiration.cleanup.interval-minutes}", timeUnit = TimeUnit.MINUTES)
+    @Scheduled(fixedRateString = "${geofence.expiration.cleanup.interval}")
     @ConditionalOnProperty(name = "geofence.expiration.cleanup.enabled", havingValue = "true", matchIfMissing = true)
     public void cleanupExpiredGeofenceDeployments() {
         try {
+            Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
+            long gracePeriodHours = gracePeriod != null ? gracePeriod.toHours() : 2;
+
             log.debug("Starting scheduled cleanup of expired Geofence deployments (grace period: {} hours)",
                     gracePeriodHours);
 
@@ -53,20 +55,24 @@ public class GeofenceExpirationCleanupService {
     }
 
     /**
-     * Get the current cleanup interval in minutes
+     * Get the current cleanup interval in minutes.
+     * This method is provided for backward compatibility with the REST API.
      * 
      * @return The cleanup interval in minutes
      */
     public int getIntervalMinutes() {
-        return intervalMinutes;
+        Duration interval = geofenceProperties.getExpiration().getCleanup().getInterval();
+        return interval != null ? (int) interval.toMinutes() : 5;
     }
 
     /**
-     * Get the current grace period in hours
+     * Get the current grace period in hours.
+     * This method is provided for backward compatibility with the REST API.
      * 
      * @return The grace period in hours
      */
     public int getGracePeriodHours() {
-        return gracePeriodHours;
+        Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
+        return gracePeriod != null ? (int) gracePeriod.toHours() : 2;
     }
 }

@@ -7,7 +7,10 @@ import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.RegistrationResponsePendingException;
 import usdot.v2x.app.api.models.etx.registration.*;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -95,7 +98,7 @@ public class RegistrationApi {
                 .headers(headers -> {
                     headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
                     headers.set("SessionToken", tokenStore.getSessionToken());
-                    headers.set("Content-Type", "application/json");
+                    headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
                 })
                 .bodyValue(requestBody)
                 .exchangeToMono(response -> switch (response.statusCode()) {
@@ -121,7 +124,7 @@ public class RegistrationApi {
                 .headers(headers -> {
                     headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
                     headers.set("SessionToken", tokenStore.getSessionToken());
-                    headers.set("Content-Type", "application/json");
+                    headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
                     headers.set("DeviceID", request.getDeviceId());
                     headers.set("VendorID", vendorId);
                 })
@@ -145,7 +148,7 @@ public class RegistrationApi {
                 .headers(headers -> {
                     headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
                     headers.set("SessionToken", tokenStore.getSessionToken());
-                    headers.set("Content-Type", "application/json");
+                    headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
                     headers.set("VendorID", vendorId);
                 })
                 .bodyValue(new ConnectionPostRequestEtx(request))
@@ -215,8 +218,8 @@ public class RegistrationApi {
                         headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
                         headers.set("SessionToken", tokenStore.getSessionToken());
                         headers.set("VendorID", vendorId);
-                        headers.set("Accept", "application/json");
-                        headers.set("Content-Type", "application/json");
+                        headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+                        headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
                     })
                     .exchangeToMono(response -> {
                         if (response.statusCode().is2xxSuccessful()) {

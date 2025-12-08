@@ -26,13 +26,8 @@ public class SecurityContextUtils {
      */
     public String determineVendorId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        log.debug("SecurityContext authentication: {}", authentication);
 
         if (authentication != null) {
-            log.debug("Authentication name: {}", authentication.getName());
-            log.debug("Authentication authorities: {}", authentication.getAuthorities());
-            log.debug("Authentication is authenticated: {}", authentication.isAuthenticated());
-
             if (authentication.getAuthorities() != null) {
                 boolean isDepositor = authentication.getAuthorities().stream()
                         .map(GrantedAuthority::getAuthority)
@@ -58,13 +53,8 @@ public class SecurityContextUtils {
      */
     public String determineRequestedBy() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        log.debug("SecurityContext authentication: {}", authentication);
 
         if (authentication != null) {
-            log.debug("Authentication name: {}", authentication.getName());
-            log.debug("Authentication authorities: {}", authentication.getAuthorities());
-            log.debug("Authentication is authenticated: {}", authentication.isAuthenticated());
-
             if (authentication.getAuthorities() != null) {
                 return authentication.getName();
             }

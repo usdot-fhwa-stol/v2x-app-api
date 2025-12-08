@@ -20,7 +20,7 @@ etx:
     distribution-type: ${ETX_CONFIGURATION_DISTRIBUTION_TYPE:Targeted}
     cleanup:
       enabled: ${GEOFENCE_CLEANUP_ENABLED:false}
-      interval-minutes: ${GEOFENCE_CLEANUP_INTERVAL_MINUTES:5}
+      interval: ${GEOFENCE_CLEANUP_INTERVAL:5m}
 thingspace:
   enabled: ${THINGSPACE_ENABLED:true}
   endpoint: ${THINGSPACE_ENDPOINT:https://thingspace.verizon.com}
@@ -53,8 +53,8 @@ geofence:
   expiration:
     cleanup:
       enabled: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:true}
-      interval-minutes: ${GEOFENCE_EXPIRATION_CLEANUP_INTERVAL_MINUTES:5}
-    grace-period-hours: ${TIM_EXPIRATION_GRACE_PERIOD_HOURS:2}
+      interval: ${GEOFENCE_EXPIRATION_CLEANUP_INTERVAL:5m}
+    grace-period: ${GEOFENCE_EXPIRATION_GRACE_PERIOD:2h}
 
 # Database Configuration
 spring:

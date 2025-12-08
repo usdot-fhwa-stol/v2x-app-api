@@ -1,10 +1,10 @@
 package usdot.v2x.app.api.etx.registration;
 
-import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.registration.*;
 import usdot.v2x.app.api.services.RegistrationLogService;
+import usdot.v2x.app.api.utils.SecurityContextUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -23,9 +23,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -45,56 +42,11 @@ public class RegistrationRestController {
     private RegistrationLogService registrationLogService;
 
     @Autowired
-    private EtxProperties etxProperties;
+    private SecurityContextUtils securityContextUtils;
 
     RegistrationRestController(
             RegistrationApi registrationApi) {
         this.registrationApi = registrationApi;
-    }
-
-    private String determineVendorId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        log.debug("SecurityContext authentication: {}", authentication);
-
-        if (authentication != null) {
-            log.debug("Authentication name: {}", authentication.getName());
-            log.debug("Authentication authorities: {}", authentication.getAuthorities());
-            log.debug("Authentication is authenticated: {}", authentication.isAuthenticated());
-
-            if (authentication.getAuthorities() != null) {
-                boolean isDepositor = authentication.getAuthorities().stream()
-                        .map(GrantedAuthority::getAuthority)
-                        .anyMatch(authority -> "ROLE_DEPOSITOR".equals(authority));
-
-                if (isDepositor) {
-                    log.debug("Using depositor vendor ID for ROLE_DEPOSITOR user");
-                    return etxProperties.getDepositorVendorId();
-                }
-            }
-        } else {
-            log.warn("Authentication is null in SecurityContext");
-        }
-        log.debug("Using default vendor ID for user");
-        return etxProperties.getVendorId();
-    }
-
-    private String determineRequestedBy() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        log.debug("SecurityContext authentication: {}", authentication);
-
-        if (authentication != null) {
-            log.debug("Authentication name: {}", authentication.getName());
-            log.debug("Authentication authorities: {}", authentication.getAuthorities());
-            log.debug("Authentication is authenticated: {}", authentication.isAuthenticated());
-
-            if (authentication.getAuthorities() != null) {
-                return authentication.getName();
-            }
-        } else {
-            log.warn("Authentication is null in SecurityContext");
-        }
-        log.debug("Using default requested by for user");
-        return "unknown";
     }
 
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
@@ -117,8 +69,8 @@ public class RegistrationRestController {
             @Parameter(description = "Seconds to sleep between retry attempts", example = "15") @RequestParam(name = "num_sec_to_sleep", required = false, defaultValue = "15") Integer num_sec_to_sleep) {
 
         // Determine vendor ID before making reactive calls
-        String vendorId = determineVendorId();
-        String requestedBy = determineRequestedBy();
+        String vendorId = securityContextUtils.determineVendorId();
+        String requestedBy = securityContextUtils.determineRequestedBy();
 
         // Check capacity and clean up if needed before registration
         registrationLogService.ensureCapacityForRegistration(vendorId, requestedBy);
@@ -171,8 +123,8 @@ public class RegistrationRestController {
             @Parameter(description = "Client registration update information", required = true) @RequestBody RegistrationPutRequest request) {
 
         // Determine vendor ID before making reactive calls
-        String vendorId = determineVendorId();
-        String requestedBy = determineRequestedBy();
+        String vendorId = securityContextUtils.determineVendorId();
+        String requestedBy = securityContextUtils.determineRequestedBy();
 
         // Check capacity and clean up if needed before registration update
         registrationLogService.ensureCapacityForRegistration(vendorId, requestedBy);
@@ -231,8 +183,8 @@ public class RegistrationRestController {
             @Parameter(description = "Combined registration and connection information", required = true) @RequestBody RegistrationConnectionPostRequest request) {
 
         // Determine vendor ID and requested by before making reactive calls
-        String vendorId = determineVendorId();
-        String requestedBy = determineRequestedBy();
+        String vendorId = securityContextUtils.determineVendorId();
+        String requestedBy = securityContextUtils.determineRequestedBy();
 
         // Check capacity and clean up if needed before registration
         registrationLogService.ensureCapacityForRegistration(vendorId, requestedBy);
@@ -303,7 +255,7 @@ public class RegistrationRestController {
     })
     public Mono<RegistrationCheckResponse> checkRegistration(
             @Parameter(description = "Device ID to check registration status for", required = true, example = "f7306888-94c9-478b-a076-bba9378563a9") @RequestParam("DeviceID") String deviceId) {
-        return registrationApi.checkRegistration(deviceId, determineVendorId())
+        return registrationApi.checkRegistration(deviceId, securityContextUtils.determineVendorId())
                 .doOnSuccess(registrationCheckResponse -> {
                     // Update last connected timestamp for the device when checking registration
                     if (registrationCheckResponse != null && registrationCheckResponse.getDeviceId() != null) {

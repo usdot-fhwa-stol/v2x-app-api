@@ -6,6 +6,7 @@ import usdot.v2x.app.api.models.etx.configuration.geofence.DistributionType;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -45,6 +46,11 @@ public class EtxProperties {
     @Data
     public static class ConfigurationCleanup {
         private boolean enabled;
-        private int intervalMinutes;
+        /**
+         * Cleanup interval duration. Supports Spring Boot duration format (e.g.,
+         * "5m", "30s", "1h")
+         * or ISO-8601 duration format (e.g., "PT5M", "PT30S", "PT1H").
+         */
+        private Duration interval;
     }
 }

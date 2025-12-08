@@ -1,8 +1,8 @@
 package usdot.v2x.app.api.etx.registration;
 
-import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.registration.*;
 import usdot.v2x.app.api.services.RegistrationLogService;
+import usdot.v2x.app.api.utils.SecurityContextUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +32,7 @@ class RegistrationRestControllerTest {
     private RegistrationLogService registrationLogService;
 
     @Mock
-    private EtxProperties etxProperties;
+    private SecurityContextUtils securityContextUtils;
 
     @Mock
     private Authentication authentication;
@@ -55,16 +55,16 @@ class RegistrationRestControllerTest {
             serviceField.setAccessible(true);
             serviceField.set(controller, registrationLogService);
 
-            var propertiesField = RegistrationRestController.class.getDeclaredField("etxProperties");
-            propertiesField.setAccessible(true);
-            propertiesField.set(controller, etxProperties);
+            var securityContextUtilsField = RegistrationRestController.class.getDeclaredField("securityContextUtils");
+            securityContextUtilsField.setAccessible(true);
+            securityContextUtilsField.set(controller, securityContextUtils);
         } catch (Exception e) {
             throw new RuntimeException("Failed to inject services", e);
         }
 
-        // Setup EtxProperties mock
-        lenient().when(etxProperties.getVendorId()).thenReturn("test-vendor-id");
-        lenient().when(etxProperties.getDepositorVendorId()).thenReturn("test-depositor-vendor-id");
+        // Setup SecurityContextUtils mock
+        lenient().when(securityContextUtils.determineVendorId()).thenReturn("test-vendor-id");
+        lenient().when(securityContextUtils.determineRequestedBy()).thenReturn("testuser");
 
         // Setup security context
         SecurityContextHolder.setContext(securityContext);
