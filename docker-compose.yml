@@ -58,6 +58,59 @@ services:
     depends_on:
       - postgres
 
+  mosquitto:
+    profiles:
+      - mqtt
+      - all
+    image: eclipse-mosquitto:2.0
+    restart: ${RESTART_POLICY:-no}
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
+    volumes:
+      - ./resources/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - v2x-api-network
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  mqtt-router:
+    profiles:
+      - mqtt-router
+      - all
+    image: mqtt-router:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: ./mqtt-router/Dockerfile
+    restart: ${RESTART_POLICY:-no}
+    environment:
+      # MQTT Broker configuration
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-mosquitto}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
+      MQTT_BROKER_USERNAME: ${MQTT_BROKER_USERNAME:-}
+      MQTT_BROKER_PASSWORD: ${MQTT_BROKER_PASSWORD:-}
+      MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-v2x/georelevance}
+      MQTT_QOS: ${MQTT_QOS:-1}
+      MQTT_RETAIN: ${MQTT_RETAIN:-true}
+
+      # Router configuration
+      ROUTER_POLL_INTERVAL: ${ROUTER_POLL_INTERVAL:-5s}
+      ROUTER_ENABLED: ${ROUTER_ENABLED:-true}
+      API_LOGGING_LEVEL: ${API_LOGGING_LEVEL:-INFO}
+    ports:
+      - "${MQTT_ROUTER_PORT:-8081}:8080"
+    logging:
+      options:
+        max-size: "10m"
+    networks:
+      - v2x-api-network
+    depends_on:
+      - mosquitto
+
   v2x-app-api:
     profiles:
       - v2x-app-api
@@ -141,6 +194,8 @@ services:
 volumes:
   keycloak:
   postgres_data:
+  mosquitto_data:
+  mosquitto_log:
 
 
 networks:

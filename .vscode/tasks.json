@@ -19,6 +19,24 @@
         ],
         "envFile": "${workspaceFolder}/.env"
       }
+    },
+    {
+      "label": "run-mosquitto",
+      "type": "docker-compose",
+      "dockerCompose": {
+        "up": {
+          "detached": true,
+          "build": false,
+          "profiles": [
+            "mqtt"
+          ],
+          "removeOrphans": true
+        },
+        "files": [
+          "${workspaceFolder}/docker-compose.yml"
+        ],
+        "envFile": "${workspaceFolder}/.env"
+      }
     }
   ]
 }

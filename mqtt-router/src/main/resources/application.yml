@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: mqtt-router
+
+server:
+  port: ${MQTT_ROUTER_PORT:8081}
+
+mqtt:
+  broker:
+    host: ${MQTT_BROKER_HOST:localhost}
+    port: ${MQTT_BROKER_PORT:1883}
+    username: ${MQTT_BROKER_USERNAME:}
+    password: ${MQTT_BROKER_PASSWORD:}
+  qos: ${MQTT_QOS:1}
+  retain: ${MQTT_RETAIN:true}
+
+router:
+  enabled: ${ROUTER_ENABLED:true}
+  poll-interval: ${ROUTER_POLL_INTERVAL:5s}
+
+logging:
+  level:
+    root: INFO
+    usdot.v2x.mqtt.router: ${API_LOGGING_LEVEL:INFO}
+

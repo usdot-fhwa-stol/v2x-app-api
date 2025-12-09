@@ -10,6 +10,15 @@
       "envFile": "${workspaceFolder}/.env",
       "vmArgs": "--enable-native-access=ALL-UNNAMED",
       "preLaunchTask": "run-keycloak"
+    },
+    {
+      "name": "Java MQTT Router",
+      "type": "java",
+      "request": "launch",
+      "mainClass": "usdot.v2x.mqtt.router.MqttRouterApplication",
+      "projectName": "mqtt-router",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "run-mosquitto"
     }
   ]
 }

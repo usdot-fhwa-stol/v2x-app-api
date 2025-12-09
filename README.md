@@ -14,7 +14,7 @@ The V2X App API facilitates:
 
 ## Architecture
 
-The application consists of three main services:
+The application consists of five main services:
 
 1. **v2x-app-api** (Port 8080): Spring Boot REST API
    - Java 22 with Foreign Function & Memory API for native J2735 codec integration
@@ -27,6 +27,17 @@ The application consists of three main services:
 
 3. **postgres** (Port 5432): Database
    - Stores registration logs, geofence deployments, vendor/user registration limits
+
+4. **mosquitto** (Port 1883, WebSocket 9001): MQTT Broker
+   - Self-hosted MQTT broker for georelevance topic distribution
+   - Supports standard MQTT (port 1883) and WebSocket (port 9001) connections
+   - Publishes V2X messages to georelevance topics based on geohashes
+
+5. **mqtt-router** (Port 8081): MQTT Router Service
+   - Monitors active geofence deployments from the database
+   - Publishes V2X messages to georelevance topics (`v2x/georelevance/{geohash}`)
+   - Handles message updates and deletions automatically
+   - Supports georelevance routing compatible with ETX MQTT API patterns
 
 ## Prerequisites
 
@@ -106,6 +117,22 @@ The application consists of three main services:
    **Deployment Mode:**
    - `DEPOSIT_MODE`: Deployment mode for TIM messages (default: `ETX_CONFIGURATION_API`). Options: `ETX_CONFIGURATION_API` (use ETX Configuration API for deployments) or `GEOFENCE_MQTT` (store in database for MQTT broker distribution)
 
+   **MQTT Broker Configuration:**
+   - `MQTT_PORT`: MQTT broker port (default: `1883`)
+   - `MQTT_WS_PORT`: MQTT WebSocket port (default: `9001`)
+   - `MQTT_BROKER_HOST`: MQTT broker hostname (default: `mosquitto` for Docker, `localhost` for local)
+   - `MQTT_BROKER_PORT`: MQTT broker port for client connections (default: `1883`)
+   - `MQTT_BROKER_USERNAME`: Optional MQTT broker username (default: empty, anonymous access)
+   - `MQTT_BROKER_PASSWORD`: Optional MQTT broker password
+   - `MQTT_TOPIC_PREFIX`: Topic prefix for georelevance topics (default: `v2x/georelevance`)
+   - `MQTT_QOS`: MQTT Quality of Service level (default: `1`)
+   - `MQTT_RETAIN`: Enable retained messages (default: `true`)
+
+   **MQTT Router Service Configuration:**
+   - `MQTT_ROUTER_PORT`: Router service HTTP port (default: `8081`)
+   - `ROUTER_ENABLED`: Enable the MQTT router service (default: `true`)
+   - `ROUTER_POLL_INTERVAL`: Interval for polling database for geofence updates (default: `5s`). Supports duration formats like `5s`, `30s`, `1m`, or ISO-8601 format like `PT5S`.
+
    **TIM Configuration:**
    - `TIM_CONFIG_FILE_PATH`: Path to TIM configuration file (default: `/tim_config_files/tim-config.json`). Use full system path if debugging in IDE, otherwise use relative path to the project root.
    - `TIM_ICONS_DIRECTORY`: Directory path for TIM icons (default: `/tim_config_files/tim-icons`)
@@ -130,6 +157,7 @@ Control which services start using profiles:
 - `postgres`: PostgreSQL only
 - `keycloak`: Keycloak + PostgreSQL
 - `v2x-app-api`: API + PostgreSQL
+- `mqtt`: MQTT Broker + Router + PostgreSQL
 - `all`: All services (default)
 
 Example:
@@ -181,6 +209,8 @@ docker compose down
    - Swagger UI: [http://localhost:8080/swagger-ui.html](`http://localhost:8080/swagger-ui.html`)
    - API Docs: [http://localhost:8080/api-docs](http://localhost:8080/api-docs)
    - Keycloak: [http://localhost:8084](http://localhost:8084)
+   - MQTT Router Health: [http://localhost:8081/actuator/health](http://localhost:8081/actuator/health)
+   - MQTT Broker: `mqtt://localhost:1883` (or `ws://localhost:9001` for WebSocket)
 
 ## API Endpoints
 
@@ -226,6 +256,39 @@ docker compose down
 ### Health & Monitoring
 - `GET /actuator/health` - Health check
 - `GET /actuator/prometheus` - Prometheus metrics
+
+### MQTT Georelevance Routing
+
+The MQTT router service handles message routing between GeoRelevance and Regional topics:
+
+**GeoRelevance Topics (Client Publishing):**
+- Format: `v2x/1/GeoRelevance/${clientType}/${clientSubtype}/Public/{messageType}`
+- Message Types: `BSM`, `PSM`, `SPAT`, `MAP`, `RSA`, `TIM`, `SDSM`, `TUM`
+- Clients publish V2X messages directly to these topics
+
+**Regional Topics (Router Forwarding):**
+- Format: `v2x/1/Regional/*/*/*/*/*/*/*/*/${clientType}/${clientSubtype}/Public/{messageType}`
+- Message Types: `RSA`, `TIM`, `SPAT`, `MAP`, `BSM`, `SDSM` (filtered subset)
+- Router automatically forwards eligible messages from GeoRelevance to Regional topics
+
+**Client Subscriptions:**
+- Clients can register subscriptions via REST API: `POST /api/v1/subscriptions/{clientId}`
+- When messages arrive on GeoRelevance topics, subscribed clients receive them
+- Subscription management: `GET /api/v1/subscriptions/{clientId}`, `DELETE /api/v1/subscriptions/{clientId}`
+
+**Example Usage:**
+```bash
+# Publish a message to georelevance topic
+mosquitto_pub -h localhost -p 1883 -t "v2x/1/GeoRelevance/OBU/Vehicle/Public/BSM" -m "message_payload"
+
+# Subscribe to georelevance topic (direct MQTT subscription)
+mosquitto_sub -h localhost -p 1883 -t "v2x/1/GeoRelevance/+/+/Public/+"
+
+# Register subscription via REST API
+curl -X POST http://localhost:8081/api/v1/subscriptions/client123 \
+  -H "Content-Type: application/json" \
+  -d '{"topicPattern": "v2x/1/GeoRelevance/+/+/Public/BSM"}'
+```
 
 ## Authentication & Authorization
 
