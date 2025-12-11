@@ -37,6 +37,48 @@
         ],
         "envFile": "${workspaceFolder}/.env"
       }
+    },
+    {
+      "label": "build-hivemq-extension",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [
+        "clean",
+        "buildExtension",
+        "-p",
+        "hivemq-v2x-routing-extension"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-hivemq-debug",
+      "type": "docker-compose",
+      "dockerCompose": {
+        "up": {
+          "detached": true,
+          "build": true,
+          "profiles": [
+            "hivemq"
+          ],
+          "removeOrphans": true
+        },
+        "files": [
+          "${workspaceFolder}/docker-compose.yml"
+        ],
+        "envFile": "${workspaceFolder}/.env"
+      }
+    },
+    {
+      "label": "build-and-start-hivemq",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "build-hivemq-extension",
+        "run-hivemq-debug"
+      ],
+      "problemMatcher": []
     }
   ]
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hivemq-extension>
+    <id>v2x-geohash-routing</id>
+    <name>V2X Geohash Routing Extension</name>
+    <version>1.0.0</version>
+    <author>USDOT V2X Team</author>
+    <priority>1000</priority>
+
+    <description>
+        Routes J2735 BSM messages based on geohash.
+        Intercepts BSM publishes to /v2x/1/ingress/bsm, extracts location,
+        computes geohash and 3x3 neighbors, then re-publishes to /v2x/1/geo/{geohash}/bsm.
+        Rewrites egress subscriptions (/v2x/1/egress/{messageType}/#) to geohash topics.
+    </description>
+
+    <main-class>usdot.v2x.hivemq.routing.V2XGeohashRoutingExtension</main-class>
+
+    <start-priority>1000</start-priority>
+</hivemq-extension>

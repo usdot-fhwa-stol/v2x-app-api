@@ -78,6 +78,35 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  hivemq:
+    profiles:
+      - hivemq
+      - all
+    image: hivemq-v2x:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: ./hivemq-v2x-routing-extension/Dockerfile
+    restart: ${RESTART_POLICY:-no}
+    ports:
+      - "${HIVEMQ_PORT:-1883}:1883"
+      - "${HIVEMQ_WS_PORT:-8000}:8000"
+      - "${HIVEMQ_REST_PORT:-8888}:8888"
+      - "${HIVEMQ_DEBUG_PORT:-5005}:5005"
+    environment:
+      HIVEMQ_CLUSTER_NAME: ${HIVEMQ_CLUSTER_NAME:-v2x-cluster}
+      # Enable Java remote debugging
+      HIVEMQ_OPTS: ${HIVEMQ_OPTS:--agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005}
+    volumes:
+      - hivemq_data:/opt/hivemq/data
+      - hivemq_log:/opt/hivemq/log
+      - hivemq_extensions:/opt/hivemq/extensions
+    networks:
+      - v2x-api-network
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   mqtt-router:
     profiles:
       - mqtt-router
@@ -196,6 +225,9 @@ volumes:
   postgres_data:
   mosquitto_data:
   mosquitto_log:
+  hivemq_data:
+  hivemq_log:
+  hivemq_extensions:
 
 
 networks:

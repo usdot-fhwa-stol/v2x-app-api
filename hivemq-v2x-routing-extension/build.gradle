@@ -1,0 +1,96 @@
+plugins {
+    id 'java'
+    id 'io.freefair.lombok' version '8.12.1'
+}
+
+group = 'usdot.v2x'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+    // HiveMQ Maven repository
+    maven {
+        url = 'https://repo.hivemq.com/releases'
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(22)
+    }
+}
+
+ext {
+    jpoAsnVersion = '1.0'
+}
+
+dependencies {
+
+    configurations.all {
+        exclude group: 'org.slf4j', module: 'slf4j-simple'
+    }
+
+    // HiveMQ Extension SDK
+    implementation 'com.hivemq:hivemq-extension-sdk:4.47.0'
+    
+   // Project dependencies
+    implementation 'usdot.jpo.asn:jpo-asn-runtime:1.0'
+    implementation 'usdot.jpo.asn:jpo-asn-j2735-2024:1.0'
+    implementation 'usdot.jpo.ode:j2735-2024-ffm-lib'
+    
+    // JTS for spatial operations
+    implementation 'org.locationtech.jts:jts-core:1.19.0'
+    
+    // Geohash library
+    implementation 'ch.hsr:geohash:1.4.0'
+    
+    // Jackson for JSON processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.17.2'
+    
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    
+    // Logging (provided by HiveMQ)
+    compileOnly 'org.slf4j:slf4j-api:2.0.16'
+    
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Task to build extension package
+task buildExtension(type: Zip) {
+    archiveBaseName = 'v2x-geohash-routing-extension'
+    archiveVersion = version
+    destinationDirectory = file("${buildDir}/distributions")
+    
+    from jar
+    from configurations.runtimeClasspath
+    
+    into('extension') {
+        from('src/main/resources') {
+            include 'extension.xml'
+        }
+        into('classes') {
+            from jar.archiveFile
+        }
+        into('lib') {
+            from configurations.runtimeClasspath
+            // Include native library in lib directory for runtime access
+            from('src/main/resources/j2735ffm') {
+                include 'libasnapplication.so'
+            }
+        }
+    }
+}
+
+compileJava {
+    options.compilerArgs += ['-parameters']
+}
+
+test {
+    useJUnitPlatform()
+}
+

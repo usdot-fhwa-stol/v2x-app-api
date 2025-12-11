@@ -19,6 +19,26 @@
       "projectName": "mqtt-router",
       "envFile": "${workspaceFolder}/.env",
       "preLaunchTask": "run-mosquitto"
+    },
+    {
+      "name": "Debug HiveMQ Extension (Attach)",
+      "type": "java",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5005,
+      "projectName": "hivemq-v2x-routing-extension",
+      "preLaunchTask": "run-hivemq-debug",
+      "postDebugTask": null
+    },
+    {
+      "name": "Debug HiveMQ Extension (Build & Attach)",
+      "type": "java",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5005,
+      "projectName": "hivemq-v2x-routing-extension",
+      "preLaunchTask": "build-and-start-hivemq",
+      "postDebugTask": null
     }
   ]
 }
