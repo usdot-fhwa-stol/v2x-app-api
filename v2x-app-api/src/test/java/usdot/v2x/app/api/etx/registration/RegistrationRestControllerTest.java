@@ -216,6 +216,36 @@ class RegistrationRestControllerTest {
         assertNull(result.getBody());
     }
 
+    @Test
+    void testGetAcls_Success() {
+        // Arrange
+        Object expectedResponse = new Object();
+        when(registrationApi.getDeviceRoles())
+                .thenReturn(reactor.core.publisher.Mono.just(expectedResponse));
+
+        // Act
+        reactor.core.publisher.Mono<Object> result = controller.getAcls();
+
+        // Assert
+        StepVerifier.create(result)
+                .expectNext(expectedResponse)
+                .verifyComplete();
+        verify(registrationApi).getDeviceRoles();
+    }
+
+    @Test
+    void testGetAcls_Error() {
+        // Arrange
+        when(registrationApi.getDeviceRoles())
+                .thenReturn(reactor.core.publisher.Mono.error(new RuntimeException("API error")));
+
+        // Act & Assert
+        StepVerifier.create(controller.getAcls())
+                .expectError(RuntimeException.class)
+                .verify();
+        verify(registrationApi).getDeviceRoles();
+    }
+
     private RegistrationLog createRegistrationLog(String deviceId) {
         RegistrationLog log = new RegistrationLog();
         log.setDeviceId(deviceId);

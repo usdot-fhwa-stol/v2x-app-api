@@ -6,6 +6,7 @@ import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.RegistrationResponsePendingException;
 import usdot.v2x.app.api.models.etx.registration.*;
+import usdot.v2x.app.api.utils.SecurityContextUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.http.HttpHeaders;
@@ -35,17 +36,20 @@ public class RegistrationApi {
     String etxPassword;
     TokenService tokenService;
     private final WebClient webClient;
+    private final SecurityContextUtils securityContextUtils;
 
     public RegistrationApi(
             EtxProperties etxProperties,
             TokenService tokenService,
-            WebClient.Builder webClientBuilder) {
+            WebClient.Builder webClientBuilder,
+            SecurityContextUtils securityContextUtils) {
         this.etxVendorId = etxProperties.getVendorId();
         this.etxDepositorVendorId = etxProperties.getDepositorVendorId();
         this.etxUsername = etxProperties.getUsername();
         this.etxPassword = etxProperties.getPassword();
         this.tokenService = tokenService;
         this.webClient = webClientBuilder.baseUrl(etxProperties.getEndpoint()).build();
+        this.securityContextUtils = securityContextUtils;
     }
 
     /**
@@ -233,6 +237,48 @@ public class RegistrationApi {
                             // Return the error response directly to the user
                             return response.bodyToMono(ErrorResponse.class)
                                     .doOnNext(errorResponse -> log.error("ETX API error response: {}", errorResponse))
+                                    .flatMap(errorResponse -> Mono
+                                            .error(new ErrorResponseException(errorResponse,
+                                                    response.statusCode())));
+                        }
+                    });
+        });
+    }
+
+    /**
+     * Get device roles/ACLs for a vendor from Thingspace
+     */
+    public Mono<Object> getDeviceRoles() {
+        // Determine vendor ID before making reactive calls
+        String vendorId = securityContextUtils.determineVendorId();
+
+        return tokenService.getTokenStore().flatMap(tokenStore -> {
+            String uri = UriComponentsBuilder.fromPath("/api/v1/device-roles/vendor")
+                    .queryParam("VendorID", vendorId)
+                    .build()
+                    .toUriString();
+
+            log.debug("Get device roles URI: {}", uri);
+            log.debug("Vendor ID: {}", vendorId);
+
+            return webClient.get()
+                    .uri(uri)
+                    .headers(headers -> {
+                        headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
+                        headers.set("SessionToken", tokenStore.getSessionToken());
+                        headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+                        headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+                    })
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            log.info("Successfully retrieved device roles for vendor {}", vendorId);
+                            return response.bodyToMono(Object.class);
+                        } else {
+                            log.warn("Failed to retrieve device roles for vendor {}, status: {}", vendorId,
+                                    response.statusCode());
+                            return response.bodyToMono(ErrorResponse.class)
+                                    .doOnNext(errorResponse -> log.error("Thingspace API error response: {}",
+                                            errorResponse))
                                     .flatMap(errorResponse -> Mono
                                             .error(new ErrorResponseException(errorResponse,
                                                     response.statusCode())));

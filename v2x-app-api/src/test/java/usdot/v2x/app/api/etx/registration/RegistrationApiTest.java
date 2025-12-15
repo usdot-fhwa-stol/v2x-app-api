@@ -6,6 +6,7 @@ import usdot.v2x.app.api.etx.TokenStore;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.registration.*;
+import usdot.v2x.app.api.utils.SecurityContextUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -55,6 +56,12 @@ public class RegistrationApiTest {
     @Mock
     private EtxProperties etxProperties;
 
+    @Mock
+    private SecurityContextUtils securityContextUtils;
+
+    @Mock
+    private WebClient.RequestHeadersUriSpec requestHeadersUriSpec;
+
     private RegistrationApi registrationApi;
 
     @BeforeEach
@@ -79,13 +86,18 @@ public class RegistrationApiTest {
         // Mock WebClient
         when(webClient.post()).thenReturn(requestBodyUriSpec);
         when(webClient.put()).thenReturn(requestBodyUriSpec);
+        when(webClient.get()).thenReturn(requestHeadersUriSpec);
         when(requestBodyUriSpec.uri(any(String.class))).thenReturn(requestBodySpec);
+        when(requestHeadersUriSpec.uri(any(String.class))).thenReturn(requestBodySpec);
         when(requestBodySpec.headers(any())).thenReturn(requestBodySpec);
         when(requestBodySpec.body(any())).thenReturn(requestHeadersSpec);
         when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
 
+        // Mock SecurityContextUtils
+        when(securityContextUtils.determineVendorId()).thenReturn("test-vendor-id");
+
         // Initialize RegistrationApi with mocked dependencies
-        registrationApi = new RegistrationApi(etxProperties, tokenService, webClientBuilder);
+        registrationApi = new RegistrationApi(etxProperties, tokenService, webClientBuilder, securityContextUtils);
     }
 
     @Test
@@ -252,5 +264,58 @@ public class RegistrationApiTest {
         assertEquals("Bearer access-token", headers.getFirst(HttpHeaders.AUTHORIZATION));
         assertEquals("session-token", headers.getFirst("SessionToken"));
         assertEquals("test-vendor-id", headers.getFirst("VendorID"));
+    }
+
+    @Test
+    public void testGetDeviceRoles_Success() {
+        Object expectedResponse = new Object();
+        when(requestBodySpec.exchangeToMono(any())).thenReturn(Mono.just(expectedResponse));
+
+        Mono<Object> responseMono = registrationApi.getDeviceRoles();
+
+        StepVerifier.create(responseMono)
+                .expectNext(expectedResponse)
+                .verifyComplete();
+
+        // Verify method calls and parameters
+        verify(webClient).get();
+        verify(requestHeadersUriSpec).uri(any(String.class));
+        ArgumentCaptor<Consumer<HttpHeaders>> headersCaptor = ArgumentCaptor.forClass(Consumer.class);
+        verify(requestBodySpec).headers(headersCaptor.capture());
+        HttpHeaders headers = new HttpHeaders();
+        headersCaptor.getValue().accept(headers);
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, headers.getFirst(HttpHeaders.ACCEPT));
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, headers.getFirst(HttpHeaders.CONTENT_TYPE));
+        assertEquals("Bearer access-token", headers.getFirst(HttpHeaders.AUTHORIZATION));
+        assertEquals("session-token", headers.getFirst("SessionToken"));
+        verify(securityContextUtils).determineVendorId();
+    }
+
+    @Test
+    public void testGetDeviceRoles_Error() {
+        ErrorResponse errorResponse = new ErrorResponse("error", "description");
+
+        when(requestBodySpec.exchangeToMono(any()))
+                .thenReturn(Mono.error(new ErrorResponseException(errorResponse,
+                        HttpStatus.INTERNAL_SERVER_ERROR)));
+
+        Mono<Object> responseMono = registrationApi.getDeviceRoles();
+
+        StepVerifier.create(responseMono)
+                .expectError(ErrorResponseException.class)
+                .verify();
+
+        // Verify method calls and parameters
+        verify(webClient).get();
+        verify(requestHeadersUriSpec).uri(any(String.class));
+        ArgumentCaptor<Consumer<HttpHeaders>> headersCaptor = ArgumentCaptor.forClass(Consumer.class);
+        verify(requestBodySpec).headers(headersCaptor.capture());
+        HttpHeaders headers = new HttpHeaders();
+        headersCaptor.getValue().accept(headers);
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, headers.getFirst(HttpHeaders.ACCEPT));
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, headers.getFirst(HttpHeaders.CONTENT_TYPE));
+        assertEquals("Bearer access-token", headers.getFirst(HttpHeaders.AUTHORIZATION));
+        assertEquals("session-token", headers.getFirst("SessionToken"));
+        verify(securityContextUtils).determineVendorId();
     }
 }
