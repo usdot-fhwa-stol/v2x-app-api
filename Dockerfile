@@ -45,4 +45,11 @@ COPY --from=builder /home/app/v2x-app-api/src/main/resources/application.yml ./
 COPY ./tim_config_files/tim-config.json /tim_config_files/tim-config.json
 COPY ./tim_config_files/tim-icons /tim_config_files/tim-icons
 
+# Copy certificate generation scripts
+COPY ./resources/mosquitto/generate-client-cert.sh /usr/local/bin/generate-client-cert.sh
+RUN chmod +x /usr/local/bin/generate-client-cert.sh
+
+# Install openssl for certificate generation
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 ENTRYPOINT ["java", "-Djava.rmi.server.hostname=$DOCKER_HOST_IP", "--enable-native-access=ALL-UNNAMED", "-jar", "/home/app/app.jar"]

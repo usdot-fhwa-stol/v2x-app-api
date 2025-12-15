@@ -10,7 +10,8 @@
           "build": true,
           "profiles": [
             "keycloak",
-            "postgres"
+            "postgres",
+            "mosquitto"
           ],
           "removeOrphans": true
         },

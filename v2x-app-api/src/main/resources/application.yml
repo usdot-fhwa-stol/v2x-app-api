@@ -55,6 +55,16 @@ geofence:
       enabled: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:true}
       interval: ${GEOFENCE_EXPIRATION_CLEANUP_INTERVAL:5m}
     grace-period: ${GEOFENCE_EXPIRATION_GRACE_PERIOD:2h}
+mosquitto:
+  enabled: ${MOSQUITTO_ENABLED:false}
+  host: ${MOSQUITTO_HOST:mosquitto}
+  port: ${MOSQUITTO_PORT:1883}
+  tls-port: ${MOSQUITTO_TLS_PORT:8883}
+  use-tls: ${MOSQUITTO_USE_TLS:true}
+  certs:
+    directory: ${MOSQUITTO_CERTS_DIRECTORY:/mosquitto/certs}
+  acl:
+    file: ${MOSQUITTO_ACL_FILE:/mosquitto/acl/acl.conf}
 
 # Database Configuration
 spring:

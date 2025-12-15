@@ -128,8 +128,18 @@ services:
       NOAA_GEOMAG_API_TOKEN: ${NOAA_GEOMAG_API_TOKEN:-noaa-geomag-api-token}
 
       API_LOGGING_LEVEL: ${API_LOGGING_LEVEL:-DEBUG}
+
+      # Mosquitto MQTT Broker configuration
+      MOSQUITTO_ENABLED: ${MOSQUITTO_ENABLED:-false}
+      MOSQUITTO_HOST: ${MOSQUITTO_HOST:-mosquitto}
+      MOSQUITTO_PORT: ${MOSQUITTO_PORT:-1883}
+      MOSQUITTO_TLS_PORT: ${MOSQUITTO_TLS_PORT:-8883}
+      MOSQUITTO_USE_TLS: ${MOSQUITTO_USE_TLS:-true}
+      MOSQUITTO_CA_CERT_PATH: ${MOSQUITTO_CA_CERT_PATH:-/mosquitto/certs/ca.crt}
     ports:
       - "8080:8080"
+    volumes:
+      - ./resources/mosquitto/certs:/mosquitto/certs
     logging:
       options:
         max-size: "10m"
@@ -137,10 +147,37 @@ services:
       - v2x-api-network
     depends_on:
       - postgres
+      - mosquitto
+
+  mosquitto:
+    profiles:
+      - mosquitto
+      - all
+    image: eclipse-mosquitto:2.0
+    restart: ${RESTART_POLICY:-no}
+    ports:
+      - "${MOSQUITTO_PORT:-1883}:1883"
+      - "${MOSQUITTO_TLS_PORT:-8883}:8883"
+    volumes:
+      - ./resources/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./resources/mosquitto/certs:/mosquitto/certs
+      - ./resources/mosquitto/acl:/mosquitto/acl
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - v2x-api-network
+    depends_on:
+      - postgres
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   keycloak:
   postgres_data:
+  mosquitto_data:
+  mosquitto_log:
 
 
 networks:

@@ -14,11 +14,11 @@ The V2X App API facilitates:
 
 ## Architecture
 
-The application consists of three main services:
+The application consists of four main services:
 
 1. **v2x-app-api** (Port 8080): Spring Boot REST API
    - Java 22 with Foreign Function & Memory API for native J2735 codec integration
-   - PostgreSQL for persistence (registration logs, geofence deployments, limits)
+   - PostgreSQL for persistence (registration logs, geofence deployments, limits, MQTT clients, ACLs)
    - OAuth2 Resource Server with Keycloak integration
 
 2. **keycloak** (Port 8084): Authentication service
@@ -26,7 +26,13 @@ The application consists of three main services:
    - User and role management
 
 3. **postgres** (Port 5432): Database
-   - Stores registration logs, geofence deployments, vendor/user registration limits
+   - Stores registration logs, geofence deployments, vendor/user registration limits, MQTT clients, ACLs
+
+4. **mosquitto** (Ports 1883, 8883): MQTT Broker
+   - Self-hosted MQTT broker with TLS support
+   - Self-signed certificate support
+   - ACL-based topic access control
+   - Geohash-based topic structure: `/v2x/geohash/{level1}.../{level7}/{messageType}`
 
 ## Prerequisites
 
@@ -106,6 +112,17 @@ The application consists of three main services:
    **Deployment Mode:**
    - `DEPOSIT_MODE`: Deployment mode for TIM messages (default: `ETX_CONFIGURATION_API`). Options: `ETX_CONFIGURATION_API` (use ETX Configuration API for deployments) or `GEOFENCE_MQTT` (store in database for MQTT broker distribution)
 
+   **Mosquitto MQTT Broker Configuration:**
+   - `MOSQUITTO_ENABLED`: Enable Mosquitto MQTT broker (default: `false`)
+   - `MOSQUITTO_HOST`: Mosquitto broker hostname (default: `mosquitto`)
+   - `MOSQUITTO_PORT`: MQTT port (default: `1883`)
+   - `MOSQUITTO_TLS_PORT`: MQTT TLS port (default: `8883`)
+   - `MOSQUITTO_USE_TLS`: Enable TLS for MQTT connections (default: `true`)
+   - `MOSQUITTO_CERTS_DIRECTORY`: Directory path for certificates (default: `/mosquitto/certs`)
+   - `MOSQUITTO_ACL_FILE`: Path to ACL configuration file (default: `/mosquitto/acl/acl.conf`)
+   - `MOSQUITTO_PASSWORD_FILE`: Path to password file (default: `/mosquitto/config/passwd`)
+   - `MOSQUITTO_SERVER_CN`: Server certificate common name (default: `mosquitto`)
+
    **TIM Configuration:**
    - `TIM_CONFIG_FILE_PATH`: Path to TIM configuration file (default: `/tim_config_files/tim-config.json`). Use full system path if debugging in IDE, otherwise use relative path to the project root.
    - `TIM_ICONS_DIRECTORY`: Directory path for TIM icons (default: `/tim_config_files/tim-icons`)
@@ -130,12 +147,57 @@ Control which services start using profiles:
 - `postgres`: PostgreSQL only
 - `keycloak`: Keycloak + PostgreSQL
 - `v2x-app-api`: API + PostgreSQL
+- `mosquitto`: Mosquitto + PostgreSQL
 - `all`: All services (default)
 
 Example:
 ```bash
 docker compose up COMPOSE_PROFILES=v2x-app-api
 ```
+
+### Mosquitto Certificate Setup
+
+Before starting Mosquitto, generate the CA and server certificates:
+
+```bash
+cd resources/mosquitto
+./generate-certs.sh
+```
+
+This will create:
+- `certs/ca.crt` - CA certificate
+- `certs/ca.key` - CA private key
+- `certs/server.crt` - Server certificate
+- `certs/server.key` - Server private key
+
+Client certificates are generated automatically when registering clients via the API with `generateCertificate: true`.
+
+**Authentication Method:**
+- **Certificate-based only**: Clients connect using TLS (port 8883) with client certificates. The API generates certificates automatically when registering clients with `generateCertificate: true`. Mosquitto uses the certificate CN (Common Name) as the username for ACL matching. All certificate information (CN, serial number, expiration) is tracked and stored in the PostgreSQL database.
+
+**Certificate Tracking in Database:**
+When a client registers and gets a certificate, the following information is stored in the `mqtt_clients` table:
+- `certificate_cn`: Certificate Common Name (used as username in ACL)
+- `certificate_serial`: Certificate serial number
+- `certificate_expires_at`: Certificate expiration timestamp
+- `last_connected_at`: Last connection timestamp (updated on each connection)
+
+**Note**: The configuration requires client certificates for TLS connections. Non-TLS connections (port 1883) are disabled by default for security.
+
+**Topic Structure:**
+MQTT topics follow the geohash-based structure:
+```
+/v2x/geohash/{level1}/{level2}/{level3}/{level4}/{level5}/{level6}/{level7}/{messageType}
+```
+
+Where:
+- `level1` through `level7` are individual characters from a geohash (up to 7 precision levels)
+- `messageType` is the V2X message type (BSM, SPAT, MAP, TIM, etc.)
+
+Example topics:
+- `/v2x/geohash/9/q/8/y/y/m/h/BSM` - BSM messages for geohash "9q8yymh"
+- `/v2x/geohash/9/q/8/+/+/+/+/BSM` - BSM messages for any geohash starting with "9q8" (wildcard)
+- `/v2x/geohash/9/q/8/#` - All message types for geohashes starting with "9q8" (multi-level wildcard)
 
 ## Building and Running
 
@@ -220,6 +282,19 @@ docker compose down
 - `GET /prd/v2/admin/secrets` - Get secret configuration
 - `PUT /prd/v2/admin/secrets` - Update secret configuration
 
+### MQTT Client Management
+- `POST /prd/v2/mqtt/clients` - Register MQTT client
+- `GET /prd/v2/mqtt/clients` - List MQTT clients for current user
+- `GET /prd/v2/mqtt/clients/{clientId}` - Get MQTT client details
+- `DELETE /prd/v2/mqtt/clients/{clientId}` - Delete MQTT client
+- `GET /prd/v2/mqtt/clients/{clientId}/certificate` - Get client certificate bundle
+
+### MQTT ACL Management
+- `POST /prd/v2/mqtt/acl` - Create or update ACL entry
+- `GET /prd/v2/mqtt/acl/{clientId}` - Get ACL entries for client
+- `DELETE /prd/v2/mqtt/acl/{aclId}` - Delete ACL entry
+- `POST /prd/v2/mqtt/acl/regenerate` - Regenerate Mosquitto ACL file (admin only)
+
 ### Decode (No Authentication Required)
 - `POST /api/v2/decode/hex` - Decode ASN.1 hex message to JSON
 
@@ -297,6 +372,16 @@ The native library (`libasnapplication.so` / `asnapplication.dll`) is required a
 - GeoJSON-like path storage
 - Timestamp and metadata tracking
 - CRUD operations for path data
+
+### MQTT Broker Integration
+- Self-hosted Mosquitto broker with TLS support
+- Self-signed certificate generation
+- Client registration and certificate management via API
+- ACL-based topic access control
+- Geohash-based topic structure: `/v2x/geohash/{level1}/{level2}/.../{level7}/{messageType}`
+  - Supports message types: BSM, SPAT, MAP, TIM, etc.
+  - Wildcard support for topic subscriptions (`+` for single level, `#` for multi-level)
+- Automatic ACL file regeneration from database
 
 ## Development
 

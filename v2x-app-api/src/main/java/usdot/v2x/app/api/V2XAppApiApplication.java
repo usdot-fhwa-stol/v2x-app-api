@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -15,6 +16,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication
 @EnableScheduling
+@EnableJpaAuditing
 @OpenAPIDefinition(info = @Info(title = "V2X App API", version = "1.0.0", description = "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. "
         +
         "This App API provides endpoints for ETX registration, V2X Message Deposit, " +
