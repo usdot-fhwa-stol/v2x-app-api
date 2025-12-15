@@ -6,6 +6,7 @@ import usdot.v2x.app.api.etx.TokenStore;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.registration.*;
+import usdot.v2x.app.api.utils.SecurityContextUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -55,6 +56,9 @@ public class RegistrationApiTest {
     @Mock
     private EtxProperties etxProperties;
 
+    @Mock
+    private SecurityContextUtils securityContextUtils;
+
     private RegistrationApi registrationApi;
 
     @BeforeEach
@@ -84,8 +88,11 @@ public class RegistrationApiTest {
         when(requestBodySpec.body(any())).thenReturn(requestHeadersSpec);
         when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
 
+        // Mock SecurityContextUtils
+        when(securityContextUtils.determineVendorId()).thenReturn("test-vendor-id");
+
         // Initialize RegistrationApi with mocked dependencies
-        registrationApi = new RegistrationApi(etxProperties, tokenService, webClientBuilder);
+        registrationApi = new RegistrationApi(etxProperties, tokenService, webClientBuilder, securityContextUtils);
     }
 
     @Test

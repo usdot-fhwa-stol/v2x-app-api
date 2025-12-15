@@ -6,14 +6,12 @@ import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.RegistrationResponsePendingException;
 import usdot.v2x.app.api.models.etx.registration.*;
+import usdot.v2x.app.api.utils.SecurityContextUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -35,37 +33,20 @@ public class RegistrationApi {
     String etxPassword;
     TokenService tokenService;
     private final WebClient webClient;
+    private final SecurityContextUtils securityContextUtils;
 
     public RegistrationApi(
             EtxProperties etxProperties,
             TokenService tokenService,
-            WebClient.Builder webClientBuilder) {
+            WebClient.Builder webClientBuilder,
+            SecurityContextUtils securityContextUtils) {
         this.etxVendorId = etxProperties.getVendorId();
         this.etxDepositorVendorId = etxProperties.getDepositorVendorId();
         this.etxUsername = etxProperties.getUsername();
         this.etxPassword = etxProperties.getPassword();
         this.tokenService = tokenService;
         this.webClient = webClientBuilder.baseUrl(etxProperties.getEndpoint()).build();
-    }
-
-    /**
-     * Determines the vendor ID based on user role and request override
-     */
-    private String determineVendorId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getAuthorities() != null) {
-            boolean isDepositor = authentication.getAuthorities().stream()
-                    .map(GrantedAuthority::getAuthority)
-                    .anyMatch(authority -> "ROLE_DEPOSITOR".equals(authority));
-
-            if (isDepositor) {
-                log.debug("Using depositor vendor ID for ROLE_DEPOSITOR user");
-                return etxDepositorVendorId;
-            }
-        }
-
-        log.debug("Using default vendor ID for user");
-        return etxVendorId;
+        this.securityContextUtils = securityContextUtils;
     }
 
     public Mono<RegistrationResponse> clientRegistrationRetryPending(
@@ -90,7 +71,7 @@ public class RegistrationApi {
     }
 
     public Mono<RegistrationResponse> clientRegistrationPost(RegistrationPostRequest request) {
-        String vendorId = determineVendorId();
+        String vendorId = securityContextUtils.determineVendorId();
         RegistrationPostRequestWithVendorId requestBody = new RegistrationPostRequestWithVendorId(request, vendorId);
 
         return tokenService.getTokenStore().flatMap(tokenStore -> webClient.post()
@@ -117,7 +98,7 @@ public class RegistrationApi {
     }
 
     public Mono<RegistrationResponse> clientRegistrationPut(RegistrationPutRequest request) {
-        String vendorId = determineVendorId();
+        String vendorId = securityContextUtils.determineVendorId();
 
         return tokenService.getTokenStore().flatMap(tokenStore -> webClient.put()
                 .uri("/api/v2/clients/registration")
@@ -141,7 +122,7 @@ public class RegistrationApi {
     }
 
     public Mono<ConnectionResponse> clientConnectionPost(ConnectionPostRequest request) {
-        String vendorId = determineVendorId();
+        String vendorId = securityContextUtils.determineVendorId();
 
         return tokenService.getTokenStore().flatMap(tokenStore -> webClient.post()
                 .uri("/api/v2/clients/connection")
