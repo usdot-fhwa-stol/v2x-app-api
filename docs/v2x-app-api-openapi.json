@@ -1,0 +1,4135 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "V2X App API",
+    "description": "API for Vehicle-to-Everything (V2X) Multi-Access Edge Computing (MEC) services. This App API provides endpoints for ETX registration, V2X Message Deposit, and authentication services.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Generated server url"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Path Management",
+      "description": "Path management endpoints for GeoJSON-like path data"
+    },
+    {
+      "name": "Registration",
+      "description": "ETX client registration endpoints for the MQTT Broker"
+    },
+    {
+      "name": "Geofence Expiration",
+      "description": "Geofence expiration management endpoints"
+    },
+    {
+      "name": "Secret Management",
+      "description": "Secret configuration endpoints"
+    },
+    {
+      "name": "Authentication",
+      "description": "Authentication and authorization for Registration and Configuration endpoints"
+    },
+    {
+      "name": "TIM Configuration",
+      "description": "TIM ITIS phrases and metadata configuration endpoints"
+    },
+    {
+      "name": "Registration",
+      "description": "ETX client registration and connection management endpoints"
+    },
+    {
+      "name": "Vendor Limits Management",
+      "description": "Endpoints for managing vendor-wide registration limits"
+    },
+    {
+      "name": "Authentication",
+      "description": "Authentication and authorization for Registration and Deposit endpoints"
+    },
+    {
+      "name": "User Limits Management",
+      "description": "Endpoints for managing user registration limits"
+    },
+    {
+      "name": "Deposit",
+      "description": "V2X Message Deposit endpoints for deployment to the ETX MQTT Broker"
+    },
+    {
+      "name": "Geofence Deployments",
+      "description": "Geofence deployment management endpoints"
+    }
+  ],
+  "paths": {
+    "/prd/v2/registration": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Check registration status",
+        "description": "Checks the registration status of a device by its device ID against the ETX API",
+        "operationId": "checkRegistration",
+        "parameters": [
+          {
+            "name": "DeviceID",
+            "in": "query",
+            "description": "Device ID to check registration status for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "f7306888-94c9-478b-a076-bba9378563a9"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration status retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid device ID",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationCheckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationCheckResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationCheckResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found - device not registered",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationCheckResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationCheckResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Update ETX client registration",
+        "description": "Updates an existing ETX client registration. This endpoint supports retry logic for handling pending registration updates. The client must provide a valid device ID for successful registration update.",
+        "operationId": "putRegistration",
+        "parameters": [
+          {
+            "name": "retry",
+            "in": "query",
+            "description": "Enable retry logic for pending registration updates",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "example": true
+          },
+          {
+            "name": "num_retries",
+            "in": "query",
+            "description": "Number of retry attempts for pending updates",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            },
+            "example": 5
+          },
+          {
+            "name": "num_sec_to_sleep",
+            "in": "query",
+            "description": "Seconds to sleep between retry attempts",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 15
+            },
+            "example": 15
+          }
+        ],
+        "requestBody": {
+          "description": "Client registration update information",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registration update successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid update data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - device not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Register ETX client",
+        "description": "Registers a new ETX client with the system. This endpoint supports retry logic for handling pending registrations. The client must provide valid client type and subtype information for successful registration.",
+        "operationId": "postRegistration",
+        "parameters": [
+          {
+            "name": "retry",
+            "in": "query",
+            "description": "Enable retry logic for pending registrations",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "example": true
+          },
+          {
+            "name": "num_retries",
+            "in": "query",
+            "description": "Number of retry attempts for pending registrations",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            },
+            "example": 5
+          },
+          {
+            "name": "num_sec_to_sleep",
+            "in": "query",
+            "description": "Seconds to sleep between retry attempts",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 15
+            },
+            "example": 15
+          }
+        ],
+        "requestBody": {
+          "description": "Client registration information",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationPostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registration successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid registration data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/configurations/geofence": {
+      "get": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Get geofence by ID",
+        "description": "Retrieves detailed information for a specific geofence by its ID. This endpoint returns the complete geofence configuration including geometry, properties, and metadata.",
+        "operationId": "getGeofence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Unique identifier of the geofence",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "geofence-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence details retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid geofence ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - geofence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Update existing geofence",
+        "description": "Updates an existing geofence with new configuration. All fields in the request will replace the existing geofence configuration.",
+        "operationId": "updateGeofence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Unique identifier of the geofence to update",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "geofence-001"
+          }
+        ],
+        "requestBody": {
+          "description": "Updated geofence configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationGeofence"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Geofence updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid geofence configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - geofence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Create new geofence",
+        "description": "Creates a new geofence with the specified configuration. The geofence can be used for V2X traffic management and safety applications.",
+        "operationId": "createGeofence",
+        "requestBody": {
+          "description": "Geofence configuration to create",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationGeofence"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Geofence created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid geofence configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Delete geofence",
+        "description": "Deletes a geofence from the system. This operation is irreversible and will remove all associated configuration and data.",
+        "operationId": "deleteGeofence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Unique identifier of the geofence to delete",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "geofence-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence deleted successfully"
+          },
+          "400": {
+            "description": "Bad request - invalid geofence ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - geofence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/registration-connection": {
+      "post": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Register and connect ETX client",
+        "description": "Performs both client registration and connection establishment in a single operation. This endpoint first registers the client with the system, then establishes a connection using the returned device ID. This is a convenience endpoint that combines the functionality of both registration and connection endpoints.",
+        "operationId": "postRegistrationConnection",
+        "parameters": [
+          {
+            "name": "num_retries",
+            "in": "query",
+            "description": "Number of retry attempts for pending registrations",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            },
+            "example": 5
+          },
+          {
+            "name": "num_sec_to_sleep",
+            "in": "query",
+            "description": "Seconds to sleep between retry attempts",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 15
+            },
+            "example": 15
+          }
+        ],
+        "requestBody": {
+          "description": "Combined registration and connection information",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationConnectionPostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registration and connection successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid registration or connection data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error - registration or connection failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/paths": {
+      "get": {
+        "tags": [
+          "Path Management"
+        ],
+        "summary": "Get all paths",
+        "description": "Retrieves all active paths in GeoJSON-like format. This endpoint returns a collection of paths with their coordinates, timestamps, and metadata.",
+        "operationId": "getAllPaths",
+        "responses": {
+          "200": {
+            "description": "Paths retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Path Management"
+        ],
+        "summary": "Create or update path",
+        "description": "Creates a new path with GeoJSON-like structure, or updates an existing path if one with the same name already exists. Only administrators can create/update paths.",
+        "operationId": "createPath",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Path created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Path updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid path data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence": {
+      "post": {
+        "tags": [
+          "Deposit"
+        ],
+        "summary": "Deposit V2X Message",
+        "description": "Deposits V2X message data to the database. This endpoint is used to deploy V2X messages (TIM, MAP, etc.) with geospatial information. The configuration must include geofence overrides to define the deployment area. Vendor ID is automatically determined from the user\u0027s JWT token based on their role.",
+        "operationId": "deposit",
+        "requestBody": {
+          "description": "Configuration data to deposit",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepositRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "V2X message deployed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid configuration data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "Conflict - no available geohash or conflicting state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload too large - exceeds maximum allowed geohashes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable entity - invalid ASN.1 data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Deposit"
+        ],
+        "summary": "Delete geofence by identifier",
+        "description": "Deletes geofence deployments associated with a specific identifier. This endpoint allows for manual removal of geofence deployments by their identifier. The system will deactivate the geofence deployment by setting is_active to false. This follows REST best practices by using query parameters for resource identification.",
+        "operationId": "deleteGeofence_1",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "query",
+            "description": "Geofence identifier to delete",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "GEOFENCE_12345"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Geofence deleted successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found - no geofence found with the specified identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/expiration/cleanup": {
+      "post": {
+        "tags": [
+          "Geofence Expiration"
+        ],
+        "summary": "Manually trigger Geofence expiration cleanup",
+        "description": "Manually triggers the cleanup process to deactivate expired Geofence deployments. This endpoint is useful for testing and immediate cleanup without waiting for the scheduled task.",
+        "operationId": "triggerCleanup",
+        "responses": {
+          "200": {
+            "description": "Cleanup completed successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/connection": {
+      "post": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Establish ETX client connection",
+        "description": "Establishes a connection for an ETX client with location and network information. This endpoint is used to register device location and network connectivity for V2X communication.",
+        "operationId": "postConnection",
+        "requestBody": {
+          "description": "Client connection information",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionPostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Connection established successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid connection data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/configurations/clear": {
+      "post": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Clear multiple geofences",
+        "description": "Clears deployed geofences from the ETX. If set to only TIM messages it will clear all inactive TIMs.This operation can be used to remove multiple geofences at once.",
+        "operationId": "clearGeofences",
+        "requestBody": {
+          "description": "Criteria for clearing geofences",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationClearGeofence"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Geofences cleared successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid clear criteria",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/admin/vendor-limits": {
+      "get": {
+        "tags": [
+          "Vendor Limits Management"
+        ],
+        "summary": "Get all vendor limits",
+        "description": "Retrieves all vendor limits (Admin only)",
+        "operationId": "getAllVendorLimits",
+        "responses": {
+          "200": {
+            "description": "Vendor limits retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VendorLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VendorLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VendorLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VendorLimitsResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Vendor Limits Management"
+        ],
+        "summary": "Create or update vendor limits",
+        "description": "Creates new vendor limits or updates existing ones. Vendor limits control the total number of registrations a vendor can have across all users (Admin only)",
+        "operationId": "createOrUpdateVendorLimits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorLimitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Vendor limits created/updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid data",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/admin/user-limits": {
+      "get": {
+        "tags": [
+          "User Limits Management"
+        ],
+        "summary": "Get all user limits",
+        "description": "Retrieves all user limits (Admin only)",
+        "operationId": "getAllUserLimits",
+        "responses": {
+          "200": {
+            "description": "User limits retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "User Limits Management"
+        ],
+        "summary": "Create or update user limits",
+        "description": "Creates new user limits or updates existing ones. Sets personal registration limits for a specific user (Admin only)",
+        "operationId": "createOrUpdateUserLimits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLimitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "User limits created/updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLimitsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid data",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLimitsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLimitsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLimitsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLimitsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Generate authentication token",
+        "description": "Authenticates a user with Keycloak and returns an access token. This endpoint is used for user authentication and obtaining JWT tokens for subsequent API calls. **Note: This endpoint does not require authentication.**",
+        "operationId": "postRegistration_1",
+        "requestBody": {
+          "description": "User credentials for authentication",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenPostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPostResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed - invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - missing or invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prd/v2/tim/icons/{version}": {
+      "get": {
+        "tags": [
+          "TIM Configuration"
+        ],
+        "summary": "Download TIM icons TAR.GZ",
+        "description": "Downloads a TAR.GZ file containing all TIM icons for the specified version. This endpoint returns all available icons for the given version in a compressed tar.gz archive.",
+        "operationId": "downloadTimIcons",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TIM icons TAR.GZ file downloaded successfully",
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/tim/configuration": {
+      "get": {
+        "tags": [
+          "TIM Configuration"
+        ],
+        "summary": "Get TIM configuration",
+        "description": "Retrieves the TIM ITIS phrases and metadata configuration. This endpoint returns the configuration JSON containing TIM phrases, their codes, graphics, and overlay information along with a version number that correlates to a downloadable ZIP file of icons.",
+        "operationId": "getTimConfiguration",
+        "responses": {
+          "200": {
+            "description": "TIM configuration retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimConfigurationResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "TIM configuration file not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/secrets": {
+      "get": {
+        "tags": [
+          "Secret Management"
+        ],
+        "summary": "Get secret configuration",
+        "description": "Retrieves secret configuration including tokens and S3 settings.",
+        "operationId": "getSecretConfig",
+        "responses": {
+          "200": {
+            "description": "Secret configuration retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/registration/cleanup/vendor/{vendorId}": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Clean up old registrations for vendor",
+        "description": "Cleans up old registrations for a specific vendor (Admin only)",
+        "operationId": "cleanupVendorRegistrations",
+        "parameters": [
+          {
+            "name": "vendorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registrations cleanup completed successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/paths/{id}": {
+      "get": {
+        "tags": [
+          "Path Management"
+        ],
+        "summary": "Get path by ID",
+        "description": "Retrieves a specific path by its ID in GeoJSON-like format.",
+        "operationId": "getPathById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Path retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Path not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Path Management"
+        ],
+        "summary": "Delete path",
+        "description": "Soft deletes a path by setting it as inactive. Only administrators can delete paths.",
+        "operationId": "deletePath",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Path deleted successfully"
+          },
+          "404": {
+            "description": "Path not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/expiration/expired": {
+      "get": {
+        "tags": [
+          "Geofence Expiration"
+        ],
+        "summary": "Get expired Geofence deployments",
+        "description": "Retrieves a list of all Geofence deployments that have expired. This endpoint is useful for monitoring and debugging expiration issues.",
+        "operationId": "getExpiredGeofenceDeployments",
+        "responses": {
+          "200": {
+            "description": "Expired Geofence deployments retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/expiration/cleanup/status": {
+      "get": {
+        "tags": [
+          "Geofence Expiration"
+        ],
+        "summary": "Get cleanup service status",
+        "description": "Retrieves the current status of the Geofence expiration cleanup service, including the cleanup interval and whether the service is enabled.",
+        "operationId": "getCleanupStatus",
+        "responses": {
+          "200": {
+            "description": "Geofence cleanup service status retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/deployments": {
+      "get": {
+        "tags": [
+          "Geofence Deployments"
+        ],
+        "summary": "Get all active Geofence deployments",
+        "description": "Retrieves all active Geofence deployments from the database. This endpoint returns a list of all currently active Geofence deployments with their configuration details, geospatial information, and metadata.",
+        "operationId": "getAllActiveGeofenceDeployments",
+        "responses": {
+          "200": {
+            "description": "Geofence deployments retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/deployments/{geofenceId}": {
+      "get": {
+        "tags": [
+          "Geofence Deployments"
+        ],
+        "summary": "Get Geofence deployment by ID",
+        "description": "Retrieves a specific Geofence deployment by its Geofence ID. This endpoint returns the complete configuration and metadata for the specified Geofence deployment.",
+        "operationId": "getGeofenceDeployment",
+        "parameters": [
+          {
+            "name": "geofenceId",
+            "in": "path",
+            "description": "Geofence ID to retrieve",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "GEOFENCE_12345"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence deployment retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Geofence deployment not found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/deployments/{geofenceId}/geohashes": {
+      "get": {
+        "tags": [
+          "Geofence Deployments"
+        ],
+        "summary": "Get geohashes for a Geofence deployment",
+        "description": "Retrieves all geohashes associated with a specific Geofence deployment. This endpoint is useful for understanding the geographical coverage of a particular Geofence deployment.",
+        "operationId": "getGeofenceGeohashes",
+        "parameters": [
+          {
+            "name": "geofenceId",
+            "in": "path",
+            "description": "Geofence ID to get geohashes for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "GEOFENCE_12345"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geohashes retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Geofence deployment not found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/deployments/user/{username}": {
+      "get": {
+        "tags": [
+          "Geofence Deployments"
+        ],
+        "summary": "Get Geofence deployments by user",
+        "description": "Retrieves all active Geofence deployments deployed by a specific user. This endpoint is useful for user-specific Geofence management and auditing.",
+        "operationId": "getGeofenceDeploymentsByUser",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "description": "Username to filter by",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "admin"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence deployments retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/deployments/geohash/{geohash}": {
+      "get": {
+        "tags": [
+          "Geofence Deployments"
+        ],
+        "summary": "Get Geofence deployments by geohash",
+        "description": "Retrieves all Geofence deployments that cover a specific geohash. This endpoint is useful for finding Geofences relevant to a particular geographical area based on geohash precision.",
+        "operationId": "getGeofenceDeploymentsByGeohash",
+        "parameters": [
+          {
+            "name": "geohash",
+            "in": "path",
+            "description": "Geohash to search for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "9q8yy"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geofence deployments retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/deposit/geofence/deployments/expired": {
+      "get": {
+        "tags": [
+          "Geofence Deployments"
+        ],
+        "summary": "Get expired Geofence deployments",
+        "description": "Retrieves all Geofence deployments that have expired. This endpoint is useful for monitoring and debugging expiration issues.",
+        "operationId": "getExpiredGeofenceDeployments_1",
+        "responses": {
+          "200": {
+            "description": "Expired Geofence deployments retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeofenceDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/configurations/geofence/ids": {
+      "get": {
+        "tags": [
+          "configuration-rest-controller"
+        ],
+        "summary": "Get all geofence IDs",
+        "description": "Retrieves a list of all available geofence IDs in the ETX. This endpoint returns summary information for all configured geofences in the ETX without the full geofence details.",
+        "operationId": "getGeofences",
+        "responses": {
+          "200": {
+            "description": "List of geofence summaries retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationGeofenceSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/admin/vendor-limits/{vendorId}": {
+      "get": {
+        "tags": [
+          "Vendor Limits Management"
+        ],
+        "summary": "Get vendor limits by vendor ID",
+        "description": "Retrieves vendor limits for a specific vendor (Admin only)",
+        "operationId": "getVendorLimitsByVendorId",
+        "parameters": [
+          {
+            "name": "vendorId",
+            "in": "path",
+            "description": "Vendor ID to get limits for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "EtxVendor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vendor limits retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vendor limits not found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLimitsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Vendor Limits Management"
+        ],
+        "summary": "Delete vendor limits",
+        "description": "Deletes vendor limits for a specific vendor (Admin only)",
+        "operationId": "deleteVendorLimits",
+        "parameters": [
+          {
+            "name": "vendorId",
+            "in": "path",
+            "description": "Vendor ID to delete limits for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "EtxVendor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vendor limits deleted successfully"
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication"
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions"
+          },
+          "404": {
+            "description": "Vendor limits not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/admin/user-limits/vendor/{vendorId}": {
+      "get": {
+        "tags": [
+          "User Limits Management"
+        ],
+        "summary": "Get user limits by vendor ID",
+        "description": "Retrieves user limits for a specific vendor (Admin only)",
+        "operationId": "getUserLimitsByVendorId",
+        "parameters": [
+          {
+            "name": "vendorId",
+            "in": "path",
+            "description": "Vendor ID to get limits for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "NeaeraEval02"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User limits retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/admin/user-limits/user/{username}": {
+      "get": {
+        "tags": [
+          "User Limits Management"
+        ],
+        "summary": "Get user limits by username",
+        "description": "Retrieves user limits for a specific username (Admin only)",
+        "operationId": "getUserLimitsByUsername",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "description": "Username to get limits for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "john.doe"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User limits retrieved successfully",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserLimitsResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/admin/user-limits/user/{username}/vendor/{vendorId}": {
+      "delete": {
+        "tags": [
+          "User Limits Management"
+        ],
+        "summary": "Delete user limits",
+        "description": "Deletes user limits for a specific user and vendor (Admin only)",
+        "operationId": "deleteUserLimits",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "description": "Username to delete limits for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "john.doe"
+          },
+          {
+            "name": "vendorId",
+            "in": "path",
+            "description": "Vendor ID to delete limits for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "NeaeraEval02"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User limits deleted successfully"
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication"
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions"
+          },
+          "404": {
+            "description": "User limits not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RegistrationPutRequest": {
+        "type": "object",
+        "properties": {
+          "DeviceID": {
+            "type": "string",
+            "description": "Unique identifier for the device to update registration"
+          }
+        },
+        "required": [
+          "DeviceID"
+        ]
+      },
+      "Certificate": {
+        "type": "object",
+        "properties": {
+          "ExpirationTime": {
+            "type": "string"
+          },
+          "cert.pem": {
+            "type": "string"
+          },
+          "key.pem": {
+            "type": "string"
+          },
+          "ca.pem": {
+            "type": "string"
+          }
+        }
+      },
+      "RegistrationResponse": {
+        "type": "object",
+        "properties": {
+          "DeviceID": {
+            "type": "string"
+          },
+          "Certificate": {
+            "$ref": "#/components/schemas/Certificate"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfigurationGeofence": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "geoFence": {
+            "$ref": "#/components/schemas/GeofenceFeatureCollection"
+          },
+          "messageStandard": {
+            "type": "string",
+            "enum": [
+              "etsi",
+              "sae"
+            ]
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DistributionSchedule": {
+        "type": "object",
+        "properties": {
+          "repeatPeriod": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startTime": {
+            "type": "string"
+          }
+        }
+      },
+      "GeofenceFeature": {
+        "type": "object",
+        "description": "GeoJSON Feature representing a single geometric element within a geofence",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "GeoJSON type, must be \u0027Feature\u0027",
+            "example": "Feature"
+          },
+          "geometry": {
+            "description": "GeoJSON geometry object defining the spatial extent",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LineString"
+              },
+              {
+                "$ref": "#/components/schemas/MultiLineString"
+              },
+              {
+                "$ref": "#/components/schemas/MultiPolygon"
+              },
+              {
+                "$ref": "#/components/schemas/Polygon"
+              }
+            ]
+          },
+          "properties": {
+            "additionalProperties": false,
+            "description": "Properties object is required and must be an empty object. No content is allowed in the properties object. Must be an empty JSON object: {}. Any properties within this object will cause validation to fail. This field enforces that the properties object contains no key-value pairs.",
+            "example": {}
+          }
+        },
+        "required": [
+          "properties"
+        ]
+      },
+      "GeofenceFeatureCollection": {
+        "type": "object",
+        "description": "GeoJSON FeatureCollection representing a geofence area",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "GeoJSON type, must be \u0027FeatureCollection\u0027",
+            "example": "FeatureCollection"
+          },
+          "features": {
+            "type": "array",
+            "description": "Array of GeoJSON features defining the geofence geometry",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceFeature"
+            }
+          }
+        }
+      },
+      "Geometry": {
+        "discriminator": {
+          "propertyName": "type"
+        },
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "Limit": {},
+      "LimitHeadingItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Limit"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "heading": {
+                "$ref": "#/components/schemas/LimitItem"
+              }
+            }
+          }
+        ]
+      },
+      "LimitItem": {
+        "type": "object",
+        "properties": {
+          "min": {
+            "type": "number",
+            "format": "double"
+          },
+          "max": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "LimitSpeedItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Limit"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "speed": {
+                "$ref": "#/components/schemas/LimitItem"
+              }
+            }
+          }
+        ]
+      },
+      "LineString": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "roadUserType": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VulnerableRoadUser",
+                "Vehicle"
+              ]
+            }
+          },
+          "triggerConditions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "enter",
+                "leave",
+                "inside",
+                "crossing"
+              ]
+            }
+          },
+          "limits": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/LimitHeadingItem"
+                },
+                {
+                  "$ref": "#/components/schemas/LimitSpeedItem"
+                }
+              ]
+            }
+          },
+          "distributionType": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Targeted",
+                "Broadcast"
+              ]
+            }
+          },
+          "distributionSchedule": {
+            "$ref": "#/components/schemas/DistributionSchedule"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MultiLineString": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "format": "double"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MultiPolygon": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "format": "double"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Polygon": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "format": "double"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ConfigurationGeofenceResponse": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "geoFence": {
+            "$ref": "#/components/schemas/GeofenceFeatureCollection"
+          },
+          "messageStandard": {
+            "type": "string",
+            "enum": [
+              "etsi",
+              "sae"
+            ]
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "vendorId": {
+            "type": "string"
+          }
+        }
+      },
+      "RegistrationPostRequest": {
+        "type": "object",
+        "description": "Request model for ETX registration",
+        "properties": {
+          "ClientType": {
+            "type": "string",
+            "description": "Type of client for registration",
+            "enum": [
+              "Vehicle",
+              "VulnerableRoadUser",
+              "TrafficLightController",
+              "InfrastructureSensor",
+              "OnboardSensor",
+              "Software"
+            ]
+          },
+          "ClientSubtype": {
+            "type": "string",
+            "description": "Subtype of client for registration",
+            "enum": [
+              "PassengerCar",
+              "Truck",
+              "Bus",
+              "EmergencyVehicle",
+              "SchoolBus",
+              "MaintenanceVehicle",
+              "Pedestrian",
+              "Bicycle",
+              "Scooter",
+              "Motorcycle",
+              "RoadSideUnit",
+              "Camera",
+              "Lidar",
+              "Radar",
+              "InductiveLoop",
+              "MagneticSensor",
+              "Platform",
+              "Application",
+              "NA"
+            ]
+          }
+        },
+        "required": [
+          "ClientSubtype",
+          "ClientType"
+        ]
+      },
+      "RegistrationConnectionPostRequest": {
+        "type": "object",
+        "properties": {
+          "ClientType": {
+            "type": "string",
+            "description": "Type of client for registration",
+            "enum": [
+              "Vehicle",
+              "VulnerableRoadUser",
+              "TrafficLightController",
+              "InfrastructureSensor",
+              "OnboardSensor",
+              "Software"
+            ]
+          },
+          "ClientSubtype": {
+            "type": "string",
+            "description": "Subtype of client for registration",
+            "enum": [
+              "PassengerCar",
+              "Truck",
+              "Bus",
+              "EmergencyVehicle",
+              "SchoolBus",
+              "MaintenanceVehicle",
+              "Pedestrian",
+              "Bicycle",
+              "Scooter",
+              "Motorcycle",
+              "RoadSideUnit",
+              "Camera",
+              "Lidar",
+              "Radar",
+              "InductiveLoop",
+              "MagneticSensor",
+              "Platform",
+              "Application",
+              "NA"
+            ]
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "description": "Latitude coordinate of the device location"
+          },
+          "long": {
+            "type": "number",
+            "format": "double",
+            "description": "Longitude coordinate of the device location"
+          },
+          "NetworkType": {
+            "type": "string",
+            "description": "Type of network connection",
+            "enum": [
+              "non-VZ",
+              "VZ"
+            ]
+          }
+        },
+        "required": [
+          "ClientSubtype",
+          "ClientType",
+          "NetworkType",
+          "lat",
+          "long"
+        ]
+      },
+      "CompleteResponse": {
+        "type": "object",
+        "properties": {
+          "registration": {
+            "$ref": "#/components/schemas/RegistrationResponse"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/ConnectionResponse"
+          }
+        }
+      },
+      "ConnectionResponse": {
+        "type": "object",
+        "properties": {
+          "MqttURL": {
+            "type": "string"
+          }
+        }
+      },
+      "PathGeometry": {
+        "type": "object",
+        "description": "Path geometry",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Geometry type",
+            "example": "LineString"
+          },
+          "coordinates": {
+            "type": "array",
+            "description": "Coordinate array",
+            "example": [
+              [
+                -105.01621,
+                39.57422
+              ],
+              [
+                -105.01623,
+                39.57424
+              ]
+            ],
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        }
+      },
+      "PathProperties": {
+        "type": "object",
+        "description": "Path properties",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Path name",
+            "example": "Sample path"
+          }
+        }
+      },
+      "PathRequest": {
+        "type": "object",
+        "description": "Path request for creating or updating paths",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Path name",
+            "example": "Sample path",
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "type": {
+            "type": "string",
+            "description": "GeoJSON type",
+            "example": "Feature"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/PathProperties",
+            "description": "Path properties"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/PathGeometry",
+            "description": "Path geometry"
+          },
+          "timestamps": {
+            "type": "array",
+            "description": "Timestamps for each coordinate",
+            "example": [
+              0,
+              100,
+              200,
+              300
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "PathResponse": {
+        "type": "object",
+        "description": "Path response containing GeoJSON-like structure",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unique identifier",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Path name",
+            "example": "Sample path"
+          },
+          "type": {
+            "type": "string",
+            "description": "GeoJSON type",
+            "example": "Feature"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/PathProperties",
+            "description": "Path properties"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/PathGeometry",
+            "description": "Path geometry"
+          },
+          "timestamps": {
+            "type": "array",
+            "description": "Timestamps for each coordinate",
+            "example": [
+              0,
+              100,
+              200,
+              300
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the path is active",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "User who created the path",
+            "example": "admin"
+          },
+          "updatedBy": {
+            "type": "string",
+            "description": "User who last updated the path",
+            "example": "admin"
+          }
+        }
+      },
+      "DepositRequest": {
+        "type": "object",
+        "description": "Request model for V2X message deposit",
+        "properties": {
+          "asn1_hex": {
+            "type": "string",
+            "description": "UPER-encoded MessageFrame containing a MAP or TIM V2X Message in hexadecimal format"
+          },
+          "override_geofence": {
+            "$ref": "#/components/schemas/GeofenceFeatureCollection",
+            "description": "Override Geofence for ETX deployment. If not set, the geofence will be extracted from the provided message"
+          }
+        },
+        "required": [
+          "asn1_hex"
+        ]
+      },
+      "GeofenceDeploymentResponse": {
+        "type": "object",
+        "description": "Response model for Geofence deployment",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Database ID of the Geofence deployment"
+          },
+          "geofence_id": {
+            "type": "string",
+            "description": "Unique identifier for the Geofence deployment"
+          },
+          "geojson": {
+            "$ref": "#/components/schemas/GeofenceFeatureCollection",
+            "description": "GeoJSON FeatureCollection representation of the deployment area"
+          },
+          "hex_payload": {
+            "type": "string",
+            "description": "ASN.1 encoded message in hexadecimal format"
+          },
+          "deployed_by": {
+            "type": "string",
+            "description": "Username of the person who deployed the Geofence"
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Whether the Geofence deployment is currently active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the Geofence was deployed"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the Geofence was last updated"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional expiration timestamp for the Geofence deployment"
+          },
+          "geohashes": {
+            "type": "array",
+            "description": "List of geohashes covering the deployment area",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConnectionPostRequest": {
+        "type": "object",
+        "properties": {
+          "DeviceID": {
+            "type": "string",
+            "description": "Unique identifier for the device"
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "description": "Latitude coordinate of the device location"
+          },
+          "long": {
+            "type": "number",
+            "format": "double",
+            "description": "Longitude coordinate of the device location"
+          },
+          "NetworkType": {
+            "type": "string",
+            "description": "Type of network connection",
+            "enum": [
+              "non-VZ",
+              "VZ"
+            ]
+          }
+        },
+        "required": [
+          "DeviceID",
+          "NetworkType",
+          "lat",
+          "long"
+        ]
+      },
+      "ConfigurationClearGeofence": {
+        "type": "object",
+        "properties": {
+          "clear_tim_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VendorLimitsRequest": {
+        "type": "object",
+        "description": "Vendor limits information",
+        "properties": {
+          "vendorId": {
+            "type": "string",
+            "description": "Vendor ID for the limits",
+            "example": "EtxVendor",
+            "minLength": 1
+          },
+          "maxRegistrations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of total registrations this vendor can have across all users",
+            "example": 100,
+            "minimum": 1
+          }
+        },
+        "required": [
+          "maxRegistrations",
+          "vendorId"
+        ]
+      },
+      "VendorLimitsResponse": {
+        "type": "object",
+        "description": "Vendor limits response",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unique identifier",
+            "example": 1
+          },
+          "vendorId": {
+            "type": "string",
+            "description": "Vendor ID",
+            "example": "EtxVendor"
+          },
+          "maxRegistrations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum total registrations this vendor can have across all users",
+            "example": 100
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the limits are active",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "User who created the limits",
+            "example": "admin"
+          },
+          "updatedBy": {
+            "type": "string",
+            "description": "User who last updated the limits",
+            "example": "admin"
+          }
+        }
+      },
+      "UserLimitsRequest": {
+        "type": "object",
+        "description": "User limits information",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Username to set limits for",
+            "example": "john.doe",
+            "minLength": 1
+          },
+          "vendorId": {
+            "type": "string",
+            "description": "Vendor ID for the limits",
+            "example": "EtxVendor",
+            "minLength": 1
+          },
+          "maxRegistrations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of registrations this specific user can have (personal limit)",
+            "example": 10,
+            "minimum": 1
+          }
+        },
+        "required": [
+          "maxRegistrations",
+          "username",
+          "vendorId"
+        ]
+      },
+      "UserLimitsResponse": {
+        "type": "object",
+        "description": "User limits response",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unique identifier",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "john.doe"
+          },
+          "vendorId": {
+            "type": "string",
+            "description": "Vendor ID",
+            "example": "NeaeraEval02"
+          },
+          "maxRegistrations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum registrations this specific user can have (personal limit)",
+            "example": 10
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the limits are active",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "User who created the limits",
+            "example": "admin"
+          },
+          "updatedBy": {
+            "type": "string",
+            "description": "User who last updated the limits",
+            "example": "admin"
+          }
+        }
+      },
+      "TokenPostRequest": {
+        "type": "object",
+        "description": "Request model for authentication token",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Username for authentication"
+          },
+          "password": {
+            "type": "string",
+            "description": "Password for authentication"
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ]
+      },
+      "TokenPostResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "refresh_expires_in": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "token_type": {
+            "type": "string"
+          },
+          "id_token": {
+            "type": "string"
+          },
+          "not-before-policy": {
+            "type": "string"
+          },
+          "session_state": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      },
+      "KeycloakErrorResponse": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "error": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "TimConfigurationResponse": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "tims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimPhrase"
+            }
+          }
+        }
+      },
+      "TimOverlay": {
+        "type": "object",
+        "properties": {
+          "majorFontSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minorFontSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "xPos": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "yPos": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "align": {
+            "type": "string"
+          }
+        }
+      },
+      "TimPhrase": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "graphic": {
+            "type": "string"
+          },
+          "overlays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimOverlay"
+            }
+          }
+        }
+      },
+      "S3Config": {
+        "type": "object",
+        "properties": {
+          "s3_access_key": {
+            "type": "string"
+          },
+          "s3_secret_key": {
+            "type": "string"
+          },
+          "s3_bucket_name": {
+            "type": "string"
+          },
+          "s3_region": {
+            "type": "string"
+          },
+          "s3_destination": {
+            "type": "string"
+          }
+        }
+      },
+      "SecretResponse": {
+        "type": "object",
+        "properties": {
+          "iss_scms_token": {
+            "type": "string"
+          },
+          "s3": {
+            "$ref": "#/components/schemas/S3Config"
+          },
+          "mapbox_access_token": {
+            "type": "string"
+          },
+          "noaa_geomag_api_token": {
+            "type": "string"
+          }
+        }
+      },
+      "RegistrationCheckResponse": {
+        "type": "object",
+        "properties": {
+          "DeviceID": {
+            "type": "string"
+          },
+          "Certificate": {
+            "$ref": "#/components/schemas/Certificate"
+          },
+          "ClientSubtype": {
+            "type": "string",
+            "enum": [
+              "PassengerCar",
+              "Truck",
+              "Bus",
+              "EmergencyVehicle",
+              "SchoolBus",
+              "MaintenanceVehicle",
+              "Pedestrian",
+              "Bicycle",
+              "Scooter",
+              "Motorcycle",
+              "RoadSideUnit",
+              "Camera",
+              "Lidar",
+              "Radar",
+              "InductiveLoop",
+              "MagneticSensor",
+              "Platform",
+              "Application",
+              "NA"
+            ]
+          },
+          "ClientType": {
+            "type": "string",
+            "enum": [
+              "Vehicle",
+              "VulnerableRoadUser",
+              "TrafficLightController",
+              "InfrastructureSensor",
+              "OnboardSensor",
+              "Software"
+            ]
+          },
+          "VendorID": {
+            "type": "string"
+          }
+        }
+      },
+      "PathsResponse": {
+        "type": "object",
+        "description": "Response containing multiple paths in GeoJSON-like format",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "description": "List of paths",
+            "items": {
+              "$ref": "#/components/schemas/PathResponse"
+            }
+          }
+        }
+      },
+      "ConfigurationGeofenceSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "description": "Keycloak JWT Bearer Token. Required for all endpoints except decode endpoints. Obtain a token from the /auth/token endpoint using your credentials.",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

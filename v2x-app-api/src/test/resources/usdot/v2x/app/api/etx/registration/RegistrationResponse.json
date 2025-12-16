@@ -1,0 +1,9 @@
+{
+  "Certificate": {
+    "ExpirationTime": "2025-11-06T22:47:39Z",
+    "ca.pem": "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n",
+    "cert.pem": "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----",
+    "key.pem": "-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----\n"
+  },
+  "DeviceID": "deviceId"
+}

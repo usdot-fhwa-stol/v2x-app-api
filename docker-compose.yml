@@ -1,0 +1,148 @@
+services:
+  postgres:
+    profiles:
+      - postgres
+      - keycloak
+      - all
+    image: postgres:17-alpine
+    restart: ${RESTART_POLICY:-no}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-v2x_app_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./resources/postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - v2x-api-network
+    logging:
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+  keycloak:
+    profiles:
+      - keycloak
+      - all
+    image: v2x-api-keycloak:${IMAGE_TAG:-latest}
+    build:
+      context: ./resources/keycloak
+    restart: ${RESTART_POLICY:-no}
+    ports:
+      - "8084:8080"
+      - "8090:9000"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-v2x_app_db}
+      KC_DB_USERNAME: ${POSTGRES_USER:-admin_user}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_SCHEMA: keycloak
+      KC_HTTP_MANAGEMENT_PORT: 9000
+      KC_HEALTH_ENABLED: true
+    logging:
+      options:
+        max-size: "10m"
+    command:
+      - start-dev
+      - --log-level=${KC_LOGGING_LEVEL:-WARN}
+      - --import-realm
+    volumes:
+      - keycloak:/opt/keycloak/data/
+    networks:
+      - v2x-api-network
+    depends_on:
+      - postgres
+
+  v2x-app-api:
+    profiles:
+      - v2x-app-api
+      - all
+    image: v2x-app-api:${IMAGE_TAG:-latest}
+    build:
+      context: .
+    restart: ${RESTART_POLICY:-no}
+    environment:
+      # Keycloak configuration
+      KEYCLOAK_ENDPOINT: ${KEYCLOAK_ENDPOINT}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_NAME: ${KEYCLOAK_CLIENT_NAME}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+
+      # Thingspace configuration
+      THINGSPACE_ENABLED: ${THINGSPACE_ENABLED:-true}
+      THINGSPACE_KEY: ${THINGSPACE_KEY}
+      THINGSPACE_SECRET: ${THINGSPACE_SECRET}
+      THINGSPACE_ENDPOINT: ${THINGSPACE_ENDPOINT}
+      THINGSPACE_SESSION_TOKEN_LIFESPAN: ${THINGSPACE_SESSION_TOKEN_LIFESPAN:-15m}
+      TOKEN_PERIODIC_REGENERATION: ${TOKEN_PERIODIC_REGENERATION:-false}
+
+      # ETX configuration
+      ETX_ENABLED: ${ETX_ENABLED:-true}
+      ETX_ENDPOINT: ${ETX_ENDPOINT}
+      ETX_VENDOR_ID: ${ETX_VENDOR_ID}
+      ETX_DEPOSITOR_VENDOR_ID: ${ETX_DEPOSITOR_VENDOR_ID:-${ETX_VENDOR_ID}}
+      ETX_VENDOR_USERNAME: ${ETX_VENDOR_USERNAME}
+      ETX_VENDOR_PASSWORD: ${ETX_VENDOR_PASSWORD}
+      # ETX Registration Limits
+      ETX_VENDOR_REGISTRATION_LIMIT: ${ETX_VENDOR_REGISTRATION_LIMIT:-50}
+      ETX_VENDOR_USER_REGISTRATION_LIMIT: ${ETX_VENDOR_USER_REGISTRATION_LIMIT:-5}
+      ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT: ${ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT:-10}
+      ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT: ${ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT:-3}
+
+      DEPOSIT_MODE: ${DEPOSIT_MODE:-ETX_CONFIGURATION_API}
+
+      # Geofence configuration
+      GEOFENCE_OFFSET_METERS: ${GEOFENCE_OFFSET_METERS:-50.0}
+      DEFAULT_LANE_WIDTH_CM: ${DEFAULT_LANE_WIDTH_CM:-1500.0}
+      GEOFENCE_CLEANUP_ENABLED: ${GEOFENCE_CLEANUP_ENABLED:-false}
+      GEOFENCE_CLEANUP_INTERVAL: ${GEOFENCE_CLEANUP_INTERVAL:-5m}
+
+      # Database configuration for error logging
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-v2x_app_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-admin_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: false
+
+      # TIM Configuration
+      TIM_CONFIG_FILE_PATH: /tim_config_files/tim-config.json
+      TIM_ICONS_DIRECTORY: /tim_config_files/tim-icons
+      GEOFENCE_GEOHASH_PRECISION: ${GEOFENCE_GEOHASH_PRECISION:-6}
+      GEOFENCE_EXPIRATION_CLEANUP_ENABLED: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:-true}
+      GEOFENCE_EXPIRATION_CLEANUP_INTERVAL: ${GEOFENCE_EXPIRATION_CLEANUP_INTERVAL:-5m}
+      GEOFENCE_EXPIRATION_GRACE_PERIOD: ${GEOFENCE_EXPIRATION_GRACE_PERIOD:-2h}
+
+      # Secret Configuration
+      ISS_SCMS_TOKEN: ${ISS_SCMS_TOKEN:-token}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-key}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-name}
+      S3_REGION: ${S3_REGION:-region}
+      S3_DESTINATION: ${S3_DESTINATION:-destination}
+      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN:-mapbox_access_token}
+      NOAA_GEOMAG_API_TOKEN: ${NOAA_GEOMAG_API_TOKEN:-noaa-geomag-api-token}
+
+      API_LOGGING_LEVEL: ${API_LOGGING_LEVEL:-DEBUG}
+    ports:
+      - "8080:8080"
+    logging:
+      options:
+        max-size: "10m"
+    networks:
+      - v2x-api-network
+    depends_on:
+      - postgres
+
+volumes:
+  keycloak:
+  postgres_data:
+
+
+networks:
+  v2x-api-network:
+    driver: bridge
