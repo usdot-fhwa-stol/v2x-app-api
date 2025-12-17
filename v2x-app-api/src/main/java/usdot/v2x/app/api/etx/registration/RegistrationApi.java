@@ -206,7 +206,23 @@ public class RegistrationApi {
                         if (response.statusCode().is2xxSuccessful()) {
                             log.info("Successfully checked registration for device {} and vendor {}", deviceId,
                                     vendorId);
-                            return response.bodyToMono(RegistrationCheckResponse.class);
+                            return response.bodyToMono(RegistrationCheckResponse.class)
+                                    .flatMap(registrationCheckResponse -> {
+                                        // Verify that the VendorID in the response matches the requesting vendor
+                                        String responseVendorId = registrationCheckResponse.getVendorId();
+                                        if (responseVendorId == null || !responseVendorId.equals(vendorId)) {
+                                            log.warn(
+                                                    "VendorID mismatch for device {}. Requested vendor: {}, Response vendor: {}",
+                                                    deviceId, vendorId, responseVendorId);
+                                            ErrorResponse errorResponse = new ErrorResponse(
+                                                    "Device not found",
+                                                    String.format("Device %s is not registered for vendor %s", deviceId,
+                                                            vendorId));
+                                            return Mono.error(
+                                                    new ErrorResponseException(errorResponse, HttpStatus.NOT_FOUND));
+                                        }
+                                        return Mono.just(registrationCheckResponse);
+                                    });
                         } else {
                             log.warn("Failed to check registration for device {} and vendor {}, status: {}", deviceId,
                                     vendorId,
