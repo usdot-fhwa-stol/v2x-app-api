@@ -237,4 +237,46 @@ public class RegistrationApi {
                     });
         });
     }
+
+    /**
+     * Get device roles/ACLs for a vendor from Thingspace
+     */
+    public Mono<Object> getDeviceRoles() {
+        // Determine vendor ID before making reactive calls
+        String vendorId = securityContextUtils.determineVendorId();
+
+        return tokenService.getTokenStore().flatMap(tokenStore -> {
+            String uri = UriComponentsBuilder.fromPath("/api/v1/device-roles/vendor")
+                    .queryParam("VendorID", vendorId)
+                    .build()
+                    .toUriString();
+
+            log.debug("Get device roles URI: {}", uri);
+            log.debug("Vendor ID: {}", vendorId);
+
+            return webClient.get()
+                    .uri(uri)
+                    .headers(headers -> {
+                        headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
+                        headers.set("SessionToken", tokenStore.getSessionToken());
+                        headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+                        headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+                    })
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            log.info("Successfully retrieved device roles for vendor {}", vendorId);
+                            return response.bodyToMono(Object.class);
+                        } else {
+                            log.warn("Failed to retrieve device roles for vendor {}, status: {}", vendorId,
+                                    response.statusCode());
+                            return response.bodyToMono(ErrorResponse.class)
+                                    .doOnNext(errorResponse -> log.error("Thingspace API error response: {}",
+                                            errorResponse))
+                                    .flatMap(errorResponse -> Mono
+                                            .error(new ErrorResponseException(errorResponse,
+                                                    response.statusCode())));
+                        }
+                    });
+        });
+    }
 }
