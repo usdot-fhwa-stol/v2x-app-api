@@ -1,9 +1,8 @@
 ################## Install curl to enable health checks ##################
-FROM registry.access.redhat.com/ubi9:9.6 AS ubi-micro-build
-RUN mkdir -p /mnt/rootfs
-RUN dnf install --installroot /mnt/rootfs curl jq \
-  --releasever 9 --setopt install_weak_deps=false --nodocs -y; \
-  dnf --installroot /mnt/rootfs clean all
+FROM alpine:latest AS tools
+RUN apk add --no-cache curl
+RUN curl -L https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 -o /usr/local/bin/jq && \
+  chmod +x /usr/local/bin/jq
 
 ################## Build custom user provider into keycloak ##################
 FROM quay.io/keycloak/keycloak:26.4 as builder
@@ -15,7 +14,10 @@ RUN /opt/keycloak/bin/kc.sh build
 
 ################## Integrate realm and theme ##################
 FROM quay.io/keycloak/keycloak:26.4
-COPY --from=ubi-micro-build /mnt/rootfs /
+USER root
+COPY --from=tools /usr/local/bin/jq /usr/bin/jq
+COPY --from=tools /usr/bin/curl /usr/bin/curl
+USER 1000
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 
 COPY ./realm.json /opt/keycloak/data/import/realm.json

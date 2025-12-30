@@ -58,6 +58,84 @@ services:
     depends_on:
       - postgres
 
+  vernemq:
+    profiles:
+      - geo-router
+      - vernemq
+      - all
+    image: vernemq/vernemq:latest
+    restart: ${RESTART_POLICY:-no}
+    ports:
+      - "1883:1883"
+      - "8888:8888"  # VerneMQ metrics endpoint
+    volumes:
+      - vernemq_data:/var/lib/vernemq
+    environment:
+      # Accept EULA (required)
+      DOCKER_VERNEMQ_ACCEPT_EULA: "yes"
+      # Basic configuration via environment variables
+      DOCKER_VERNEMQ_ALLOW_ANONYMOUS: "on"
+      DOCKER_VERNEMQ_LISTENER__TCP__DEFAULT: "0.0.0.0:1883"
+    networks:
+      - v2x-api-network
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "vmq-admin", "session", "show", "--timeout", "5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  geo-router-service:
+    profiles:
+      - geo-router
+      - all
+    image: geo-router-service:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: ./geo-router-service/Dockerfile
+    restart: ${RESTART_POLICY:-no}
+    environment:
+      # MQTT Configuration
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-tcp://vernemq:1883}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-geo-router-service}
+      MQTT_SUBSCRIBE_TOPIC: ${MQTT_SUBSCRIBE_TOPIC:-v2x/bsm/publish}
+      MQTT_PUBLISH_TOPIC_PATTERN: ${MQTT_PUBLISH_TOPIC_PATTERN:-v2x/georelevance/{geohash_path}/{message_type}/+}
+      MQTT_QOS: ${MQTT_QOS:-1}
+
+      # Geospatial Routing Configuration
+      GEOHASH_PRECISION: ${GEOHASH_PRECISION:-7}
+      GEOHASH_NEIGHBOR_RADIUS: ${GEOHASH_NEIGHBOR_RADIUS:-1}
+      GEO_ROUTING_ENABLED: ${GEO_ROUTING_ENABLED:-true}
+      MAX_SUBSCRIBERS_PER_MESSAGE: ${MAX_SUBSCRIBERS_PER_MESSAGE:-1000}
+      MESSAGE_TTL_SECONDS: ${MESSAGE_TTL_SECONDS:-10}
+      
+      # Database configuration (same as v2x-app-api)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-v2x_app_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-admin_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./j2735-ffm-java/lib/libasnapplication.so:/usr/lib/libasnapplication.so:ro
+    networks:
+      - v2x-api-network
+    depends_on:
+      vernemq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   v2x-app-api:
     profiles:
       - v2x-app-api
@@ -141,6 +219,7 @@ services:
 volumes:
   keycloak:
   postgres_data:
+  vernemq_data:
 
 
 networks:

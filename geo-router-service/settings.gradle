@@ -1,0 +1,6 @@
+rootProject.name = 'geo-router-service'
+
+includeBuild("../jpo-asn-pojos/jpo-asn-runtime")
+includeBuild("../jpo-asn-pojos/jpo-asn-j2735-2024")
+includeBuild("../j2735-ffm-java/j2735-2024-ffm-lib")
+

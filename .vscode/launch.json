@@ -10,6 +10,16 @@
       "envFile": "${workspaceFolder}/.env",
       "vmArgs": "--enable-native-access=ALL-UNNAMED",
       "preLaunchTask": "run-keycloak"
+    },
+    {
+      "name": "Java Geo Router Service",
+      "type": "java",
+      "request": "launch",
+      "mainClass": "usdot.v2x.georouter.GeoRouterApplication",
+      "projectName": "geo-router-service",
+      "envFile": "${workspaceFolder}/.env",
+      "vmArgs": "--enable-native-access=ALL-UNNAMED",
+      "preLaunchTask": "run-vernemq"
     }
   ]
 }

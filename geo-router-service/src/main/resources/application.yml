@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: v2x-geo-router
+
+server:
+  port: 8081
+
+# MQTT Configuration
+mqtt:
+  broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+  client-id: ${MQTT_CLIENT_ID:geo-router-service}
+  username: ${MQTT_USERNAME:}
+  password: ${MQTT_PASSWORD:}
+  # Ingress topic: clients publish BSMs here
+  subscribe-topic: ${MQTT_SUBSCRIBE_TOPIC:v2x/bsm/publish}
+  # Geohash-filtered topics: TMC apps publish filtered messages here
+  geohash-filtered-topic-pattern: ${MQTT_GEOHASH_FILTERED_TOPIC_PATTERN:v2x/georelevance/+/+/+/+/+/+/+/BSM}
+  # Client egress topic pattern: geo router publishes directly to clients
+  client-egress-topic-pattern: ${MQTT_CLIENT_EGRESS_TOPIC_PATTERN:v2x/client/{deviceId}/messages}
+  qos: ${MQTT_QOS:1}
+  clean-session: ${MQTT_CLEAN_SESSION:true}
+  connection-timeout: ${MQTT_CONNECTION_TIMEOUT:30}
+  keep-alive-interval: ${MQTT_KEEP_ALIVE:60}
+  auto-reconnect: ${MQTT_AUTO_RECONNECT:true}
+
+# J2735 Codec Configuration
+j2735:
+  codec:
+    text-buffer-size: 262144
+    uper-buffer-size: 8192
+    error-buffer-size: 256
+    library-path: /usr/lib/libasnapplication.so
+    windows-library-path: C:/temp/asnapplication.dll
+
+# Geospatial Routing Configuration
+geo-routing:
+  geohash:
+    precision: ${GEOHASH_PRECISION:7}
+    neighbor-radius: ${GEOHASH_NEIGHBOR_RADIUS:1}
+  routing:
+    enabled: ${GEO_ROUTING_ENABLED:true}
+    max-subscribers-per-message: ${MAX_SUBSCRIBERS_PER_MESSAGE:1000}
+    message-ttl-seconds: ${MESSAGE_TTL_SECONDS:10}
+  # Device location cache configuration
+  cache:
+    enabled: ${DEVICE_LOCATION_CACHE_ENABLED:true}
+    type: ${DEVICE_LOCATION_CACHE_TYPE:postgres}  # Options: postgres, in-memory
+    ttl-seconds: ${DEVICE_LOCATION_CACHE_TTL_SECONDS:30}
+    cleanup-interval-seconds: ${DEVICE_LOCATION_CACHE_CLEANUP_INTERVAL:60}
+  # Database configuration for MQTT device locations
+  # Uses same environment variables as v2x-app-api for consistency
+  database:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/v2x_app_db}
+    username: ${POSTGRES_USER:admin_user}
+    password: ${POSTGRES_PASSWORD:change_me_123}
+
+# Logging Configuration
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    usdot.v2x.georouter: ${LOG_LEVEL:DEBUG}
+    org.eclipse.paho: ${LOG_LEVEL:WARN}
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+

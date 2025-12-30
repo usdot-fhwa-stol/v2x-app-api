@@ -1,0 +1,76 @@
+plugins {
+    id 'org.springframework.boot' version '3.4.5'
+    id 'io.spring.dependency-management' version '1.1.6'
+    id 'java'
+}
+
+description = 'V2X Geo Router Service'
+
+repositories {
+    mavenCentral().content {
+        excludeModule("javax.media", "jai_core")
+    }
+    maven { url 'https://repo.osgeo.org/repository/geotools-releases/' }
+    maven { url 'https://repo1.maven.org/maven2/' }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(22)
+    }
+}
+
+compileJava {
+    options.compilerArgs += ['-parameters']
+}
+
+ext {
+    jpoAsnVersion = '1.0'
+}
+
+dependencies {
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Spring Boot starters
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-configuration-processor'
+    
+    // Database
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // MQTT Client (Eclipse Paho MQTT v5)
+    implementation 'org.eclipse.paho:org.eclipse.paho.mqttv5.client:1.2.5'
+
+    // Jackson for JSON/XML processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
+    // Geohash library
+    implementation 'ch.hsr:geohash:1.4.0'
+
+    // Project dependencies
+    implementation 'usdot.jpo.asn:jpo-asn-runtime:1.0'
+    implementation 'usdot.jpo.asn:jpo-asn-j2735-2024:1.0'
+    implementation 'usdot.jpo.ode:j2735-2024-ffm-lib'
+
+    // Test dependencies
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.mockito:mockito-core'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+

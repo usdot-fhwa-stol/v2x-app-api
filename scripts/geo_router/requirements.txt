@@ -1,0 +1,5 @@
+# Requirements for geo router test scripts
+paho-mqtt>=2.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
