@@ -264,4 +264,17 @@ public class RegistrationRestController {
                 });
     }
 
+    @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
+    @GetMapping("/acl-rules")
+    @Operation(summary = "Get device roles/ACLs", description = "Retrieves device roles/ACLs for the vendor from Thingspace", security = @SecurityRequirement(name = "BearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Device roles retrieved successfully", content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions"),
+            @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public Mono<Object> getAcls() {
+        return registrationApi.getDeviceRoles();
+    }
+
 }

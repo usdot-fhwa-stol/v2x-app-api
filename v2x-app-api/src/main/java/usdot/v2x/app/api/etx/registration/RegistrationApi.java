@@ -206,7 +206,23 @@ public class RegistrationApi {
                         if (response.statusCode().is2xxSuccessful()) {
                             log.info("Successfully checked registration for device {} and vendor {}", deviceId,
                                     vendorId);
-                            return response.bodyToMono(RegistrationCheckResponse.class);
+                            return response.bodyToMono(RegistrationCheckResponse.class)
+                                    .flatMap(registrationCheckResponse -> {
+                                        // Verify that the VendorID in the response matches the requesting vendor
+                                        String responseVendorId = registrationCheckResponse.getVendorId();
+                                        if (responseVendorId == null || !responseVendorId.equals(vendorId)) {
+                                            log.warn(
+                                                    "VendorID mismatch for device {}. Requested vendor: {}, Response vendor: {}",
+                                                    deviceId, vendorId, responseVendorId);
+                                            ErrorResponse errorResponse = new ErrorResponse(
+                                                    "Device not found",
+                                                    String.format("Device %s is not registered for vendor %s", deviceId,
+                                                            vendorId));
+                                            return Mono.error(
+                                                    new ErrorResponseException(errorResponse, HttpStatus.NOT_FOUND));
+                                        }
+                                        return Mono.just(registrationCheckResponse);
+                                    });
                         } else {
                             log.warn("Failed to check registration for device {} and vendor {}, status: {}", deviceId,
                                     vendorId,
@@ -214,6 +230,48 @@ public class RegistrationApi {
                             // Return the error response directly to the user
                             return response.bodyToMono(ErrorResponse.class)
                                     .doOnNext(errorResponse -> log.error("ETX API error response: {}", errorResponse))
+                                    .flatMap(errorResponse -> Mono
+                                            .error(new ErrorResponseException(errorResponse,
+                                                    response.statusCode())));
+                        }
+                    });
+        });
+    }
+
+    /**
+     * Get device roles/ACLs for a vendor from Thingspace
+     */
+    public Mono<Object> getDeviceRoles() {
+        // Determine vendor ID before making reactive calls
+        String vendorId = securityContextUtils.determineVendorId();
+
+        return tokenService.getTokenStore().flatMap(tokenStore -> {
+            String uri = UriComponentsBuilder.fromPath("/api/v1/device-roles/vendor")
+                    .queryParam("VendorID", vendorId)
+                    .build()
+                    .toUriString();
+
+            log.debug("Get device roles URI: {}", uri);
+            log.debug("Vendor ID: {}", vendorId);
+
+            return webClient.get()
+                    .uri(uri)
+                    .headers(headers -> {
+                        headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
+                        headers.set("SessionToken", tokenStore.getSessionToken());
+                        headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+                        headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+                    })
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            log.info("Successfully retrieved device roles for vendor {}", vendorId);
+                            return response.bodyToMono(Object.class);
+                        } else {
+                            log.warn("Failed to retrieve device roles for vendor {}, status: {}", vendorId,
+                                    response.statusCode());
+                            return response.bodyToMono(ErrorResponse.class)
+                                    .doOnNext(errorResponse -> log.error("Thingspace API error response: {}",
+                                            errorResponse))
                                     .flatMap(errorResponse -> Mono
                                             .error(new ErrorResponseException(errorResponse,
                                                     response.statusCode())));
