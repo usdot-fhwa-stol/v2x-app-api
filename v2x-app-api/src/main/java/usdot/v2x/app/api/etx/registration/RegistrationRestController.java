@@ -71,6 +71,8 @@ public class RegistrationRestController {
         // Determine vendor ID before making reactive calls
         String vendorId = securityContextUtils.determineVendorId();
         String requestedBy = securityContextUtils.determineRequestedBy();
+        log.debug("Vendor ID: {}", vendorId);
+        log.debug("Requested By: {}", requestedBy);
 
         // Check capacity and clean up if needed before registration
         registrationLogService.ensureCapacityForRegistration(vendorId, requestedBy);

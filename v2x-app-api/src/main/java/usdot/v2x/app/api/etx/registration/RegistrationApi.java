@@ -73,7 +73,7 @@ public class RegistrationApi {
     public Mono<RegistrationResponse> clientRegistrationPost(RegistrationPostRequest request) {
         String vendorId = securityContextUtils.determineVendorId();
         RegistrationPostRequestWithVendorId requestBody = new RegistrationPostRequestWithVendorId(request, vendorId);
-
+        log.debug("Registration request body: {}", requestBody);
         return tokenService.getTokenStore().flatMap(tokenStore -> webClient.post()
                 .uri("/api/v2/clients/registration")
                 .headers(headers -> {
