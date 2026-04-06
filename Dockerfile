@@ -45,4 +45,12 @@ COPY --from=builder /home/app/v2x-app-api/src/main/resources/application.yml ./
 COPY ./tim_config_files/tim-config.json /tim_config_files/tim-config.json
 COPY ./tim_config_files/tim-icons /tim_config_files/tim-icons
 
-ENTRYPOINT ["java", "-Djava.rmi.server.hostname=$DOCKER_HOST_IP", "--enable-native-access=ALL-UNNAMED", "-jar", "/home/app/app.jar"]
+# Copy the truststore
+COPY ./caltrans_trustore.jks /home/app/caltrans_trustore.jks
+
+ENTRYPOINT ["java", \ 
+    "-Djava.rmi.server.hostname=$DOCKER_HOST_IP", \ 
+    "-Djavax.net.ssl.trustStore=/home/app/caltrans_trustore.jks", \
+    "-Djavax.net.ssl.trustStorePassword=changeit", \
+    "--enable-native-access=ALL-UNNAMED", "-jar", \
+    "/home/app/app.jar"]
