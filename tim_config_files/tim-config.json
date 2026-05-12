@@ -1443,6 +1443,82 @@
                 "13580"
             ],
             "graphic": "weight_station_ahead.png"
+        },
+        {
+            "name": "left, lanes, closed-ahead",
+            "source": "itsa-wzdx",
+            "type": "advisory",
+            "codes": [
+                "769",
+                "*",
+                "8195",
+                "771"
+            ],
+            "graphic": "left_lane_closed_ahead.png"
+        },
+        {
+            "name": "right-lane, closed-ahead",
+            "source": "itsa-wzdx",
+            "type": "advisory",
+            "codes": [
+                "769",
+                "*",
+                "8196",
+                "771"
+            ],
+            "graphic": "right_lane_closed_ahead.png"
+        },
+        {
+            "name": "center-lane, closed-ahead",
+            "source": "itsa-wzdx",
+            "type": "advisory",
+            "codes": [
+                "769",
+                "*",
+                "8197",
+                "771"
+            ],
+            "graphic": "center_lane_closed_ahead.png"
+        },
+        {
+            "name": "Work Zone Speed Limit",
+            "source": "itsa-wzdx",
+            "type": "advisory",
+            "codes": [
+                "1025",
+                "268",
+                "#",
+                "8720"
+            ],
+            "graphic": "advisory_speed_limit_mph.png",
+            "overlays": [
+                {
+                    "majorFontSize": 80,
+                    "minorFontSize": 48,
+                    "xPos": 60,
+                    "yPos": 60
+                }
+            ]
+        },
+        {
+            "name": "Slow Traffic Ahead",
+            "source": "itsa-video",
+            "type": "advisory",
+            "codes": [
+                "259",
+                "13569"
+            ],
+            "graphic": "traffic_congestion_ahead.png"
+        },
+        {
+            "name": "Unprotected Worker",
+            "source": "itsa-video",
+            "type": "advisory",
+            "codes": [
+                "6952",
+                "7169"
+            ],
+            "graphic": "look_out_for_workers.png"
         }
     ]
 }
