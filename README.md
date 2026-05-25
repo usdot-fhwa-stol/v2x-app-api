@@ -201,7 +201,7 @@ Compose merges the second file into the first. Service overrides use `ports: !re
 **First-time setup** (creates runtime directories ignored by git):
 
 ```bash
-mkdir -p certs vhost.d html logs/nginx nginx
+mkdir -p certs vhost.d html logs/nginx
 cp sample.env .env
 # Set KC_DOMAIN, V2X_API_DOMAIN, LETSENCRYPT_EMAIL, and KEYCLOAK_ENDPOINT=https://<KC_DOMAIN>
 ```

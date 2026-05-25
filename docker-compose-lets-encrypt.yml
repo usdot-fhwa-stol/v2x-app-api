@@ -21,7 +21,6 @@ services:
       - ./vhost.d:/etc/nginx/vhost.d
       - ./html:/usr/share/nginx/html
       - ./logs/nginx:/var/log/nginx
-      - ./nginx/nginx.tmpl:/app/nginx.tmpl:ro
     networks:
       - v2x-api-network
     restart: ${RESTART_POLICY:-always}
