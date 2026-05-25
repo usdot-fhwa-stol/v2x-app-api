@@ -1,3 +1,9 @@
+# HTTPS overlay — merges with docker-compose.yml.
+# Usage: docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml up -d
+#
+# Overrides keycloak and v2x-app-api to expose ports only on the internal network
+# (nginx-proxy publishes 80/443). Set KC_DOMAIN, V2X_API_DOMAIN, and LETSENCRYPT_EMAIL in .env.
+
 include:
   - ./docker-compose.yml
 
@@ -57,3 +63,26 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  keycloak:
+    ports: !reset []
+    expose:
+      - "8080"
+    environment:
+      KC_HTTP_ENABLED: true
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: ${KC_DOMAIN}
+      VIRTUAL_HOST: ${KC_DOMAIN}
+      VIRTUAL_PORT: 8080
+      LETSENCRYPT_HOST: ${KC_DOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+
+  v2x-app-api:
+    ports: !reset []
+    expose:
+      - "8080"
+    environment:
+      VIRTUAL_HOST: ${V2X_API_DOMAIN}
+      VIRTUAL_PORT: 8080
+      LETSENCRYPT_HOST: ${V2X_API_DOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}

@@ -130,9 +130,11 @@ The repository consists of four main services:
    - `API_LOGGING_LEVEL`: API logging level (default: `INFO`). Options: `"TRACE"`, `"DEBUG"`, `"INFO"`, `"SUCCESS"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`
 
    **Let's Encrypt / nginx-proxy** ([`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml)):
-   - `LETSENCRYPT_EMAIL`: Contact email for Let's Encrypt (required for the HTTPS overlay)
-   - `RESTART_POLICY`: Restart policy for nginx-proxy and acme-companion (same variable as other services; compose default is `always` when unset)
-   - Proxied containers must expose `VIRTUAL_HOST`, `LETSENCRYPT_HOST`, and `VIRTUAL_PORT` (see [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy#ssl-support))
+   - `LETSENCRYPT_EMAIL`: Contact email for Let's Encrypt (required)
+   - `KC_DOMAIN`: Public hostname for Keycloak (e.g. `auth.example.com`)
+   - `V2X_API_DOMAIN`: Public hostname for the API (e.g. `api.example.com`)
+   - `KEYCLOAK_ENDPOINT`: Set to `https://${KC_DOMAIN}` when using the HTTPS overlay
+   - `RESTART_POLICY`: Restart policy for all services; nginx-proxy/acme-companion default to `always` in the overlay if unset
 
    **Kafka Producer Configuration** ([`kafka-producer/`](kafka-producer/)):
    - `KAFKA_PRODUCER_SPRING_PROFILES_ACTIVE`: Spring profile for the kafka-producer service (default: `default`). Use `local` for local Kafka overrides, or `confluent` for Confluent Cloud SASL_SSL.
@@ -182,28 +184,41 @@ docker compose down
 
 ### HTTPS with Let's Encrypt (Production)
 
-For public deployments, use the [`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml) overlay with [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) and [acme-companion](https://github.com/nginx-proxy/acme-companion). This terminates TLS on ports 80/443 and obtains certificates for proxied services.
+Use a **dual compose file** setup:
+
+| File | Role |
+|------|------|
+| [`docker-compose.yml`](docker-compose.yml) | Base stack: publishes app ports on the host for local dev (`8080`, `8084`, …) |
+| [`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml) | Overlay: adds nginx-proxy + acme-companion; **overrides** `keycloak` and `v2x-app-api` to drop host port bindings and set `VIRTUAL_HOST` / `LETSENCRYPT_*` env vars |
+
+Compose merges the second file into the first. Service overrides use `ports: !reset []` so published ports from the base file are removed, then `expose` keeps containers reachable only on `v2x-api-network` for nginx-proxy.
 
 **Prerequisites:**
-- DNS `A`/`AAAA` records for each proxied hostname pointing at the server
+- DNS `A`/`AAAA` records for `KC_DOMAIN` and `V2X_API_DOMAIN` pointing at the server
 - Ports `80` and `443` reachable from the internet (Let's Encrypt HTTP-01 challenge)
-- `LETSENCRYPT_EMAIL` set in `.env` (see [`sample.env`](sample.env))
+- `LETSENCRYPT_EMAIL`, `KC_DOMAIN`, and `V2X_API_DOMAIN` set in `.env` (see [`sample.env`](sample.env))
 
 **First-time setup** (creates runtime directories ignored by git):
 
 ```bash
 mkdir -p certs vhost.d html logs/nginx nginx
 cp sample.env .env
-# Set LETSENCRYPT_EMAIL; add VIRTUAL_HOST / LETSENCRYPT_HOST on proxied services as needed
+# Set KC_DOMAIN, V2X_API_DOMAIN, LETSENCRYPT_EMAIL, and KEYCLOAK_ENDPOINT=https://<KC_DOMAIN>
 ```
 
-**Start with TLS:**
+**Local dev** (direct ports, no TLS):
+
+```bash
+docker compose up -d
+```
+
+**Production with TLS**:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml up -d
 ```
 
-Uses `RESTART_POLICY` from `.env` for the nginx-proxy and acme-companion containers (defaults to `always` in the overlay if unset).
+The overlay adds `nginx-proxy` and `letsencrypt`, and patches `keycloak` / `v2x-app-api` with proxy hostname env vars from your sample — without duplicating the full service definitions from the base file.
 
 View proxy / certificate logs:
 
