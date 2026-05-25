@@ -138,6 +138,33 @@ services:
     depends_on:
       - postgres
 
+  kafka-producer:
+    profiles:
+      - kafka-producer
+      - all
+    image: v2x-kafka-producer:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.kafka_producer
+    restart: ${RESTART_POLICY:-no}
+    networks:
+      - v2x-api-network
+    environment:
+      SPRING_PROFILES_ACTIVE: ${KAFKA_PRODUCER_SPRING_PROFILES_ACTIVE:-default}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
+      POSTGRES_SERVER_URL: jdbc:postgresql://${POSTGRES_HOST:-postgres}:5432
+      POSTGRES_DB: ${POSTGRES_DB:-v2x_app_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      CONFLUENT_KEY: ${CONFLUENT_KEY:-}
+      CONFLUENT_SECRET: ${CONFLUENT_SECRET:-}
+    logging:
+      options:
+        max-size: "10m"
+    depends_on:
+      postgres:
+        condition: service_started
+
 volumes:
   keycloak:
   postgres_data:

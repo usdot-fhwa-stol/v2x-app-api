@@ -14,7 +14,7 @@ The V2X App API facilitates:
 
 ## Architecture
 
-The application consists of three main services:
+The repository consists of four main services:
 
 1. **v2x-app-api** (Port 8080): Spring Boot REST API
    - Java 22 with Foreign Function & Memory API for native J2735 codec integration
@@ -27,6 +27,11 @@ The application consists of three main services:
 
 3. **postgres** (Port 5432): Database
    - Stores registration logs, geofence deployments, vendor/user registration limits
+   - `LISTEN/NOTIFY` on `table_updates` for geofence cache invalidation (used by kafka-producer)
+
+4. **kafka-producer**: Sidecar Spring Boot service ([`kafka-producer/`](kafka-producer/))
+   - Java 23; reads active geofence payloads from PostgreSQL and publishes `GeoHashRoutedMsg` protobuf to Kafka at 1 Hz
+   - Reacts to Postgres `table_updates` notifications; see [`kafka-producer/README.md`](kafka-producer/README.md)
 
 ## Prerequisites
 
@@ -50,7 +55,7 @@ The application consists of three main services:
 
    **Docker Configuration:**
    - `DOCKER_HOST_IP`: Docker host IP address (used for service URLs)
-   - `COMPOSE_PROFILES`: Docker Compose profiles to use (default: `all`). Available profiles: `postgres`, `keycloak`, `v2x-app-api`, `all`
+   - `COMPOSE_PROFILES`: Docker Compose profiles to use (default: `all`). Available profiles: `postgres`, `keycloak`, `v2x-app-api`, `kafka-producer`, `all`
    - `RESTART_POLICY`: Docker container restart policy (default: `"no"`). See [Docker documentation](https://docs.docker.com/engine/containers/start-containers-automatically/) for options.
 
    **Keycloak Configuration:**
@@ -124,12 +129,20 @@ The application consists of three main services:
    - `KC_LOGGING_LEVEL`: Keycloak logging level (default: `"WARN"`). Options: `"ALL"`, `"FATAL"`, `"OFF"`, `"TRACE"`, `"WARN"`
    - `API_LOGGING_LEVEL`: API logging level (default: `INFO`). Options: `"TRACE"`, `"DEBUG"`, `"INFO"`, `"SUCCESS"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`
 
+   **Kafka Producer Configuration** ([`kafka-producer/`](kafka-producer/)):
+   - `KAFKA_PRODUCER_SPRING_PROFILES_ACTIVE`: Spring profile for the kafka-producer service (default: `default`). Use `local` for local Kafka overrides, or `confluent` for Confluent Cloud SASL_SSL.
+   - `KAFKA_BOOTSTRAP_SERVERS`: Kafka broker list (default: `localhost:9092`). Must be reachable from the kafka-producer container when using Docker.
+   - `POSTGRES_HOST`: Postgres hostname for the kafka-producer JDBC URL in Docker Compose (default: `postgres`).
+   - `CONFLUENT_KEY` / `CONFLUENT_SECRET`: Confluent Cloud API key and secret (required when profile is `confluent`).
+   - Reuses `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` from the database configuration above.
+
 ### Docker Compose Profiles
 
 Control which services start using profiles:
 - `postgres`: PostgreSQL only
 - `keycloak`: Keycloak + PostgreSQL
 - `v2x-app-api`: API + PostgreSQL
+- `kafka-producer`: Kafka producer sidecar + PostgreSQL (requires external or host-reachable Kafka)
 - `all`: All services (default)
 
 Example:
@@ -149,6 +162,12 @@ docker compose up --build -d
 View logs:
 ```bash
 docker compose logs -f v2x-app-api
+docker compose logs -f kafka-producer
+```
+
+Start only the kafka-producer sidecar (with Postgres):
+```bash
+COMPOSE_PROFILES=kafka-producer docker compose up -d postgres kafka-producer
 ```
 
 Stop services:
@@ -303,6 +322,10 @@ The native library (`libasnapplication.so` / `asnapplication.dll`) is required a
 ### Project Structure
 
 ```
+kafka-producer/          # Geohash → Kafka protobuf publisher (Java 23, Spring Boot)
+├── src/main/java/...    # Cache, Postgres LISTEN/NOTIFY, scheduled publish
+└── README.md            # Module-specific configuration and run instructions
+
 v2x-app-api/
 ├── src/main/java/usdot/v2x/app/api/
 │   ├── config/          # Configuration classes
