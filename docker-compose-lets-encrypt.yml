@@ -1,0 +1,59 @@
+include:
+  - ./docker-compose.yml
+
+services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:1.10
+    pull_policy: always
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./vhost.d:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+      - ./logs/nginx:/var/log/nginx
+      - ./nginx/nginx.tmpl:/app/nginx.tmpl:ro
+    networks:
+      - v2x-api-network
+    restart: ${RESTART_POLICY:-always}
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  letsencrypt:
+    image: nginxproxy/acme-companion:2.6
+    pull_policy: always
+    container_name: letsencrypt-companion
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs:/etc/nginx/certs:rw
+      - ./vhost.d:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+    environment:
+      - DEFAULT_EMAIL=${LETSENCRYPT_EMAIL}
+      - NGINX_DOCKER_GEN_CONTAINER=nginx-docker-gen
+    depends_on:
+      - nginx-proxy
+    networks:
+      - v2x-api-network
+    restart: ${RESTART_POLICY:-always}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"

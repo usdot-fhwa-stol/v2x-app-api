@@ -129,6 +129,11 @@ The repository consists of four main services:
    - `KC_LOGGING_LEVEL`: Keycloak logging level (default: `"WARN"`). Options: `"ALL"`, `"FATAL"`, `"OFF"`, `"TRACE"`, `"WARN"`
    - `API_LOGGING_LEVEL`: API logging level (default: `INFO`). Options: `"TRACE"`, `"DEBUG"`, `"INFO"`, `"SUCCESS"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`
 
+   **Let's Encrypt / nginx-proxy** ([`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml)):
+   - `LETSENCRYPT_EMAIL`: Contact email for Let's Encrypt (required for the HTTPS overlay)
+   - `RESTART_POLICY`: Restart policy for nginx-proxy and acme-companion (same variable as other services; compose default is `always` when unset)
+   - Proxied containers must expose `VIRTUAL_HOST`, `LETSENCRYPT_HOST`, and `VIRTUAL_PORT` (see [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy#ssl-support))
+
    **Kafka Producer Configuration** ([`kafka-producer/`](kafka-producer/)):
    - `KAFKA_PRODUCER_SPRING_PROFILES_ACTIVE`: Spring profile for the kafka-producer service (default: `default`). Use `local` for local Kafka overrides, or `confluent` for Confluent Cloud SASL_SSL.
    - `KAFKA_BOOTSTRAP_SERVERS`: Kafka broker list (default: `localhost:9092`). Must be reachable from the kafka-producer container when using Docker.
@@ -173,6 +178,37 @@ COMPOSE_PROFILES=kafka-producer docker compose up -d postgres kafka-producer
 Stop services:
 ```bash
 docker compose down
+```
+
+### HTTPS with Let's Encrypt (Production)
+
+For public deployments, use the [`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml) overlay with [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) and [acme-companion](https://github.com/nginx-proxy/acme-companion). This terminates TLS on ports 80/443 and obtains certificates for proxied services.
+
+**Prerequisites:**
+- DNS `A`/`AAAA` records for each proxied hostname pointing at the server
+- Ports `80` and `443` reachable from the internet (Let's Encrypt HTTP-01 challenge)
+- `LETSENCRYPT_EMAIL` set in `.env` (see [`sample.env`](sample.env))
+
+**First-time setup** (creates runtime directories ignored by git):
+
+```bash
+mkdir -p certs vhost.d html logs/nginx nginx
+cp sample.env .env
+# Set LETSENCRYPT_EMAIL; add VIRTUAL_HOST / LETSENCRYPT_HOST on proxied services as needed
+```
+
+**Start with TLS:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml up -d
+```
+
+Uses `RESTART_POLICY` from `.env` for the nginx-proxy and acme-companion containers (defaults to `always` in the overlay if unset).
+
+View proxy / certificate logs:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml logs -f nginx-proxy letsencrypt
 ```
 
 ### Local Development
