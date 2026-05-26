@@ -2,9 +2,11 @@ package usdot.v2x.app.api;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.services.ErrorLoggingService;
 
@@ -38,6 +40,18 @@ public class GlobalExceptionHandler {
 
     public GlobalExceptionHandler(ErrorLoggingService errorLoggingService) {
         this.errorLoggingService = errorLoggingService;
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
+        String description = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .collect(java.util.stream.Collectors.joining("; "));
+
+        errorLoggingService.logErrorFromRequest("VALIDATION_ERROR", ex, ErrorLoggingService.ErrorSeverity.MEDIUM);
+
+        log.warn("Request validation failed: {}", description);
+        return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_REQUEST", description));
     }
 
     // Handle 400 bad request exceptions for failed JSON parsing

@@ -2,6 +2,7 @@ package usdot.v2x.app.api.deposit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
+import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentResponse;
@@ -27,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 import static org.springframework.http.MediaType.*;
 
@@ -68,7 +70,7 @@ public class DepositRestController {
             "The configuration must include geofence overrides to define the deployment area. " +
             "Vendor ID is automatically determined from the user's JWT token based on their role.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Configuration data to deposit", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = DepositRequest.class))), responses = {
                     @ApiResponse(responseCode = "200", description = "V2X message deployed successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = GeofenceDeploymentResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Bad request - invalid configuration data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "400", description = "Bad request - invalid configuration data (e.g. override_geofence must be a GeoJSON FeatureCollection, not a Feature)", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
                     @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),
                     @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions", content = @Content(mediaType = "application/json")),
                     @ApiResponse(responseCode = "409", description = "Conflict - no available geohash or conflicting state", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
@@ -77,9 +79,17 @@ public class DepositRestController {
                     @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
             })
     public ResponseEntity<?> deposit(
-            @Parameter(description = "V2X message data to deposit", required = true) @RequestBody DepositRequest request)
+            @Parameter(description = "V2X message data to deposit", required = true) @Valid @RequestBody DepositRequest request)
             throws JsonProcessingException {
         try {
+            GeofenceFeatureCollection overrideGeofence = request.getOverrideGeofence();
+            if (overrideGeofence != null && !"FeatureCollection".equals(overrideGeofence.getType())) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_GEOFENCE_TYPE",
+                        "override_geofence must be a GeoJSON FeatureCollection "
+                                + "(\"type\": \"FeatureCollection\"), but received \"type\": \""
+                                + (overrideGeofence.getType() != null ? overrideGeofence.getType() : "null")
+                                + "\". Wrap your Feature(s) in a FeatureCollection."));
+            }
 
             if (depositProperties.getMode() == DepositProperties.Mode.ETX_CONFIGURATION_API) {
                 // Deposit the V2X message to the ETX Configuration API
