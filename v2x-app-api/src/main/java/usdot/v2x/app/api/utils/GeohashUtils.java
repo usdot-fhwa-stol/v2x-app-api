@@ -572,8 +572,9 @@ public class GeohashUtils {
             if (representativeGeohashes.size() < minGeohashes) {
                 log.debug("Below minimum geohashes ({} < {}), running boundary enforcement pass",
                         representativeGeohashes.size(), minGeohashes);
-                enforceMinimumBoundaryGeohashes(geofenceFeatureCollection, gridPrecision,
-                        representativeGeohashes, existingUsedGeohashes, minGeohashes);
+                enforceMinimumBoundaryGeohashes(geofenceFeatureCollection, gridPrecision, gridSize,
+                        latStep, lonStep, affectedGeohashes, representativeGeohashes,
+                        existingUsedGeohashes, minGeohashes);
                 log.debug("After boundary enforcement: {} representative geohashes",
                         representativeGeohashes.size());
             }
@@ -716,35 +717,9 @@ public class GeohashUtils {
     private void processPolygon(Polygon polygon, int gridPrecision, int gridSize,
             double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
             Set<String> existingUsedGeohashes) {
-        // Process exterior ring vertices
-        Coordinate[] exteriorCoords = polygon.getExteriorRing().getCoordinates();
-        for (Coordinate coord : exteriorCoords) {
-            processCoordinate(coord.y, coord.x, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        }
-
-        // Interpolate along exterior ring edges (~1 point per 50m, mirrors processLineString)
-        for (int i = 0; i < exteriorCoords.length - 1; i++) {
-            int numPoints = calculateInterpolationPoints(exteriorCoords[i], exteriorCoords[i + 1]);
-            for (int j = 1; j < numPoints; j++) {
-                double ratio = (double) j / numPoints;
-                double lat = exteriorCoords[i].y + (exteriorCoords[i + 1].y - exteriorCoords[i].y) * ratio;
-                double lon = exteriorCoords[i].x + (exteriorCoords[i + 1].x - exteriorCoords[i].x) * ratio;
-                processCoordinate(lat, lon, gridPrecision, gridSize,
-                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-            }
-        }
-
-        // Process interior rings (holes)
-        for (int i = 0; i < polygon.getNumInteriorRing(); i++) {
-            Coordinate[] interiorCoords = polygon.getInteriorRingN(i).getCoordinates();
-            for (Coordinate coord : interiorCoords) {
-                processCoordinate(coord.y, coord.x, gridPrecision, gridSize,
-                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-            }
-        }
-
-        // Process interpolated points for better coverage
+        // Scan the polygon interior at 4-cell intervals to follow the path centerline.
+        // Ring vertices (which fall on the road boundary) are intentionally skipped so
+        // that only center-of-road cells are selected.
         processPolygonInterpolation(polygon, gridPrecision, gridSize,
                 latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
     }
@@ -811,12 +786,17 @@ public class GeohashUtils {
             // Generate the 3x3 grid around this coordinate
             List<String> gridGeohashes = generate3x3GridOptimized(lat, lon, gridPrecision, gridSize, latStep, lonStep);
 
-            // Check if any of the geohashes in this grid are already covered
+            // Check if any of the geohashes in this grid are already covered.
+            // When allowOverlappingGeohashes is enabled the overlap check is skipped so
+            // that denser coverage is achieved (e.g. path-based TIMs). The center-cell
+            // early-exit above still prevents exact duplicate representatives.
             boolean hasOverlap = false;
-            for (String gridGeohash : gridGeohashes) {
-                if (affectedGeohashes.contains(gridGeohash)) {
-                    hasOverlap = true;
-                    break;
+            if (!geofenceProperties.getLimits().isAllowOverlappingGeohashes()) {
+                for (String gridGeohash : gridGeohashes) {
+                    if (affectedGeohashes.contains(gridGeohash)) {
+                        hasOverlap = true;
+                        break;
+                    }
                 }
             }
 
@@ -896,17 +876,25 @@ public class GeohashUtils {
             double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
             Set<String> existingUsedGeohashes) {
         try {
-            // Get the bounding box
             Envelope envelope = polygon.getEnvelopeInternal();
 
-            // Generate geohashes in a grid pattern and filter by polygon intersection
-            for (double lat = envelope.getMinY(); lat <= envelope.getMaxY(); lat += latStep) {
-                for (double lon = envelope.getMinX(); lon <= envelope.getMaxX(); lon += lonStep) {
-                    // Create a point for intersection testing
-                    org.locationtech.jts.geom.Point point = geometryFactory.createPoint(new Coordinate(lon, lat));
+            // Scan at 4-cell intervals so selected geohashes follow the path centerline
+            // and are never adjacent to each other (4 > gridSize=3, so 3x3 grids never
+            // overlap between consecutive scan points).
+            double stepLat = latStep * 4;
+            double stepLon = lonStep * 4;
 
-                    // Check if the point intersects with the polygon
-                    if (polygon.contains(point) || polygon.intersects(point)) {
+            // Offset by half a step so the first scan row/column lands in the center of the
+            // first band rather than on the bounding-box edge. This prevents narrow corridor
+            // sections (whose lat/lon extent is less than one full step) from being missed
+            // when their boundary coincides with the scan-grid origin.
+            double startLat = envelope.getMinY() + stepLat / 2.0;
+            double startLon = envelope.getMinX() + stepLon / 2.0;
+
+            for (double lat = startLat; lat <= envelope.getMaxY(); lat += stepLat) {
+                for (double lon = startLon; lon <= envelope.getMaxX(); lon += stepLon) {
+                    org.locationtech.jts.geom.Point point = geometryFactory.createPoint(new Coordinate(lon, lat));
+                    if (polygon.contains(point)) {
                         processCoordinate(lat, lon, gridPrecision, gridSize,
                                 latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
                     }
@@ -925,15 +913,21 @@ public class GeohashUtils {
      * Second-pass minimum boundary enforcement.
      *
      * Iterates over each Polygon exterior ring (vertices + interpolated edge points)
-     * in the FeatureCollection and directly adds center geohashes until
-     * {@code minGeohashes} is reached. Unlike the normal pass, there is no 3x3
-     * overlap check — only duplicate and existing-deployment checks are applied.
-     * This guarantees perimeter coverage when the strict overlap filter would
-     * otherwise leave fewer than the configured minimum.
+     * in the FeatureCollection and adds non-clustered center geohashes until
+     * {@code minGeohashes} is reached. Unlike the normal pass the strict
+     * "any 3x3 overlap → drop" check is relaxed, but the "center already
+     * in affectedGeohashes → skip" guard is still applied so that adjacent
+     * geohashes are never added next to an existing representative. When a new
+     * representative is accepted its full 3×3 grid is reserved in
+     * {@code affectedGeohashes}, preventing clustering within this pass too.
      */
     private void enforceMinimumBoundaryGeohashes(
             GeofenceFeatureCollection geofenceFeatureCollection,
             int gridPrecision,
+            int gridSize,
+            double latStep,
+            double lonStep,
+            Set<String> affectedGeohashes,
             List<String> representativeGeohashes,
             Set<String> existingUsedGeohashes,
             int minGeohashes) {
@@ -975,8 +969,8 @@ public class GeohashUtils {
                 double toLat = to.get(1);
 
                 // Vertex itself
-                if (addBoundaryGeohash(fromLat, fromLon, gridPrecision,
-                        representativeGeohashes, existingUsedGeohashes)
+                if (addBoundaryGeohash(fromLat, fromLon, gridPrecision, gridSize, latStep, lonStep,
+                        affectedGeohashes, representativeGeohashes, existingUsedGeohashes)
                         && representativeGeohashes.size() >= minGeohashes) {
                     break outer;
                 }
@@ -989,8 +983,8 @@ public class GeohashUtils {
                     double ratio = (double) j / numPoints;
                     double lat = fromLat + (toLat - fromLat) * ratio;
                     double lon = fromLon + (toLon - fromLon) * ratio;
-                    if (addBoundaryGeohash(lat, lon, gridPrecision,
-                            representativeGeohashes, existingUsedGeohashes)
+                    if (addBoundaryGeohash(lat, lon, gridPrecision, gridSize, latStep, lonStep,
+                            affectedGeohashes, representativeGeohashes, existingUsedGeohashes)
                             && representativeGeohashes.size() >= minGeohashes) {
                         break outer;
                     }
@@ -1000,20 +994,40 @@ public class GeohashUtils {
     }
 
     /**
-     * Encodes {@code (lat, lon)} and adds it to {@code representativeGeohashes} if
-     * it is not already present and not claimed by another active deployment.
+     * Encodes {@code (lat, lon)} and adds it to {@code representativeGeohashes} if:
+     * <ul>
+     *   <li>its center geohash is not already covered by any 3×3 grid in
+     *       {@code affectedGeohashes} (prevents clustering), and</li>
+     *   <li>it is not claimed by another active deployment
+     *       ({@code existingUsedGeohashes}).</li>
+     * </ul>
+     * On success the representative's 3×3 grid is reserved in
+     * {@code affectedGeohashes} so subsequent candidates in the same pass are
+     * spaced correctly.
      *
      * @return {@code true} if the geohash was newly added, {@code false} otherwise
      */
-    private boolean addBoundaryGeohash(double lat, double lon, int gridPrecision,
-            List<String> representativeGeohashes, Set<String> existingUsedGeohashes) {
+    private boolean addBoundaryGeohash(double lat, double lon,
+            int gridPrecision, int gridSize, double latStep, double lonStep,
+            Set<String> affectedGeohashes,
+            List<String> representativeGeohashes,
+            Set<String> existingUsedGeohashes) {
         try {
             String geohash = encodeGeohash(lat, lon, gridPrecision);
-            if (!representativeGeohashes.contains(geohash)
-                    && (existingUsedGeohashes == null || !existingUsedGeohashes.contains(geohash))) {
-                representativeGeohashes.add(geohash);
-                return true;
+
+            // Skip if this point's cell is already inside an existing 3x3 grid
+            if (affectedGeohashes.contains(geohash)) {
+                return false;
             }
+            if (existingUsedGeohashes != null && existingUsedGeohashes.contains(geohash)) {
+                return false;
+            }
+
+            // Claim the 3x3 grid so the next candidate in this pass stays spaced
+            List<String> grid = generate3x3GridOptimized(lat, lon, gridPrecision, gridSize, latStep, lonStep);
+            affectedGeohashes.addAll(grid);
+            representativeGeohashes.add(geohash);
+            return true;
         } catch (Exception e) {
             log.warn("Error encoding boundary geohash at ({}, {}): {}", lat, lon, e.getMessage());
         }

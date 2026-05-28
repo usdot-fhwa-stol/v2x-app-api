@@ -9,7 +9,7 @@
       "projectName": "v2x-app-api",
       "envFile": "${workspaceFolder}/.env",
       "vmArgs": "--enable-native-access=ALL-UNNAMED",
-      "preLaunchTask": "run-keycloak"
+      "preLaunchTask": "sync-classes-to-bin"
     }
   ]
 }

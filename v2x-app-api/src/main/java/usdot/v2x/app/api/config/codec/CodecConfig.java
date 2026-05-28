@@ -109,6 +109,11 @@ public class CodecConfig {
         }
 
         // Finally, check configured path (for Docker/production)
+        if (configuredPath == null || configuredPath.isBlank()) {
+            throw new IllegalStateException(
+                    "j2735.codec.library-path is not configured and the library was not found in any common path. "
+                            + "Set j2735.codec.library-path in application.yml or ensure application.yml is on the classpath.");
+        }
         Path configuredLibPath = Paths.get(configuredPath);
         if (java.nio.file.Files.exists(configuredLibPath)) {
             log.info("Using configured library path: {}", configuredPath);

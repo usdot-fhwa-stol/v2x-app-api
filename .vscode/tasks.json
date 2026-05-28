@@ -19,6 +19,31 @@
         ],
         "envFile": "${workspaceFolder}/.env"
       }
+    },
+    {
+      "label": "gradle-compile",
+      "type": "shell",
+      "command": "./gradlew compileJava processResources",
+      "options": {
+        "cwd": "${workspaceFolder}/v2x-app-api"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "sync-classes-to-bin",
+      "type": "shell",
+      "command": "rsync -a --delete build/classes/java/main/ bin/main/ && rsync -a build/resources/main/ bin/main/ 2>/dev/null || true",
+      "options": {
+        "cwd": "${workspaceFolder}/v2x-app-api"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "dependsOn": ["gradle-compile", "run-keycloak"]
     }
   ]
 }

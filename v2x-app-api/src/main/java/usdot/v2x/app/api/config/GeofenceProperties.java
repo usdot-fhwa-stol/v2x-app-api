@@ -27,6 +27,7 @@ public class GeofenceProperties {
     public static class Limits {
         private int maxGeohashes = 500;
         private int minGeohashes = 8;
+        private boolean allowOverlappingGeohashes = false;
     }
 
     @Data

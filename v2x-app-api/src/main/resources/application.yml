@@ -50,6 +50,8 @@ geofence:
     precision: ${GEOFENCE_GEOHASH_PRECISION:7}
   limits:
     max-geohashes: ${GEOFENCE_LIMITS_MAX_GEOHASHES:500}
+    min-geohashes: ${GEOFENCE_LIMITS_MIN_GEOHASHES:8}
+    allow-overlapping-geohashes: ${GEOFENCE_LIMITS_ALLOW_OVERLAPPING_GEOHASHES:true}
   expiration:
     cleanup:
       enabled: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:true}
