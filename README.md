@@ -14,7 +14,7 @@ The V2X App API facilitates:
 
 ## Architecture
 
-The application consists of three main services:
+The repository consists of four main services:
 
 1. **v2x-app-api** (Port 8080): Spring Boot REST API
    - Java 22 with Foreign Function & Memory API for native J2735 codec integration
@@ -27,6 +27,11 @@ The application consists of three main services:
 
 3. **postgres** (Port 5432): Database
    - Stores registration logs, geofence deployments, vendor/user registration limits
+   - `LISTEN/NOTIFY` on `table_updates` for geofence cache invalidation (used by kafka-producer)
+
+4. **kafka-producer**: Sidecar Spring Boot service ([`kafka-producer/`](kafka-producer/))
+   - Java 23; reads active geofence payloads from PostgreSQL and publishes `GeoHashRoutedMsg` protobuf to Kafka at 1 Hz
+   - Reacts to Postgres `table_updates` notifications; see [`kafka-producer/README.md`](kafka-producer/README.md)
 
 ## Prerequisites
 
@@ -50,7 +55,7 @@ The application consists of three main services:
 
    **Docker Configuration:**
    - `DOCKER_HOST_IP`: Docker host IP address (used for service URLs)
-   - `COMPOSE_PROFILES`: Docker Compose profiles to use (default: `all`). Available profiles: `postgres`, `keycloak`, `v2x-app-api`, `all`
+   - `COMPOSE_PROFILES`: Docker Compose profiles to use (default: `all`). Available profiles: `postgres`, `keycloak`, `v2x-app-api`, `kafka-producer`, `all`
    - `RESTART_POLICY`: Docker container restart policy (default: `"no"`). See [Docker documentation](https://docs.docker.com/engine/containers/start-containers-automatically/) for options.
 
    **Keycloak Configuration:**
@@ -124,12 +129,27 @@ The application consists of three main services:
    - `KC_LOGGING_LEVEL`: Keycloak logging level (default: `"WARN"`). Options: `"ALL"`, `"FATAL"`, `"OFF"`, `"TRACE"`, `"WARN"`
    - `API_LOGGING_LEVEL`: API logging level (default: `INFO`). Options: `"TRACE"`, `"DEBUG"`, `"INFO"`, `"SUCCESS"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`
 
+   **Let's Encrypt / nginx-proxy** ([`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml)):
+   - `LETSENCRYPT_EMAIL`: Contact email for Let's Encrypt (required)
+   - `KC_DOMAIN`: Public hostname for Keycloak (e.g. `auth.example.com`)
+   - `V2X_API_DOMAIN`: Public hostname for the API (e.g. `api.example.com`)
+   - `KEYCLOAK_ENDPOINT`: Set to `https://${KC_DOMAIN}` when using the HTTPS overlay
+   - `RESTART_POLICY`: Restart policy for all services; nginx-proxy/acme-companion default to `always` in the overlay if unset
+
+   **Kafka Producer Configuration** ([`kafka-producer/`](kafka-producer/)):
+   - `KAFKA_PRODUCER_SPRING_PROFILES_ACTIVE`: Spring profile for the kafka-producer service (default: `default`). Use `local` for local Kafka overrides, or `confluent` for Confluent Cloud SASL_SSL.
+   - `KAFKA_BOOTSTRAP_SERVERS`: Kafka broker list (default: `localhost:9092`). Must be reachable from the kafka-producer container when using Docker.
+   - `POSTGRES_HOST`: Postgres hostname for the kafka-producer JDBC URL in Docker Compose (default: `postgres`).
+   - `CONFLUENT_KEY` / `CONFLUENT_SECRET`: Confluent Cloud API key and secret (required when profile is `confluent`).
+   - Reuses `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` from the database configuration above.
+
 ### Docker Compose Profiles
 
 Control which services start using profiles:
 - `postgres`: PostgreSQL only
 - `keycloak`: Keycloak + PostgreSQL
 - `v2x-app-api`: API + PostgreSQL
+- `kafka-producer`: Kafka producer sidecar + PostgreSQL (requires external or host-reachable Kafka)
 - `all`: All services (default)
 
 Example:
@@ -149,11 +169,61 @@ docker compose up --build -d
 View logs:
 ```bash
 docker compose logs -f v2x-app-api
+docker compose logs -f kafka-producer
+```
+
+Start only the kafka-producer sidecar (with Postgres):
+```bash
+COMPOSE_PROFILES=kafka-producer docker compose up -d postgres kafka-producer
 ```
 
 Stop services:
 ```bash
 docker compose down
+```
+
+### HTTPS with Let's Encrypt (Production)
+
+Use a **dual compose file** setup:
+
+| File | Role |
+|------|------|
+| [`docker-compose.yml`](docker-compose.yml) | Base stack: publishes app ports on the host for local dev (`8080`, `8084`, …) |
+| [`docker-compose-lets-encrypt.yml`](docker-compose-lets-encrypt.yml) | Overlay: adds nginx-proxy + acme-companion; **overrides** `keycloak` and `v2x-app-api` to drop host port bindings and set `VIRTUAL_HOST` / `LETSENCRYPT_*` env vars |
+
+Compose merges the second file into the first. Service overrides use `ports: !reset []` so published ports from the base file are removed, then `expose` keeps containers reachable only on `v2x-api-network` for nginx-proxy.
+
+**Prerequisites:**
+- DNS `A`/`AAAA` records for `KC_DOMAIN` and `V2X_API_DOMAIN` pointing at the server
+- Ports `80` and `443` reachable from the internet (Let's Encrypt HTTP-01 challenge)
+- `LETSENCRYPT_EMAIL`, `KC_DOMAIN`, and `V2X_API_DOMAIN` set in `.env` (see [`sample.env`](sample.env))
+
+**First-time setup** (creates runtime directories ignored by git):
+
+```bash
+mkdir -p certs vhost.d html logs/nginx
+cp sample.env .env
+# Set KC_DOMAIN, V2X_API_DOMAIN, LETSENCRYPT_EMAIL, and KEYCLOAK_ENDPOINT=https://<KC_DOMAIN>
+```
+
+**Local dev** (direct ports, no TLS):
+
+```bash
+docker compose up -d
+```
+
+**Production with TLS**:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml up -d
+```
+
+The overlay adds `nginx-proxy` and `letsencrypt`, and patches `keycloak` / `v2x-app-api` with proxy hostname env vars from your sample — without duplicating the full service definitions from the base file.
+
+View proxy / certificate logs:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml logs -f nginx-proxy letsencrypt
 ```
 
 ### Local Development
@@ -303,6 +373,10 @@ The native library (`libasnapplication.so` / `asnapplication.dll`) is required a
 ### Project Structure
 
 ```
+kafka-producer/          # Geohash → Kafka protobuf publisher (Java 23, Spring Boot)
+├── src/main/java/...    # Cache, Postgres LISTEN/NOTIFY, scheduled publish
+└── README.md            # Module-specific configuration and run instructions
+
 v2x-app-api/
 ├── src/main/java/usdot/v2x/app/api/
 │   ├── config/          # Configuration classes
