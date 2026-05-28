@@ -564,10 +564,22 @@ public class GeohashUtils {
             log.debug("Geohash filtering: generated {} representative geohashes covering {} total geohashes",
                     representativeGeohashes.size(), affectedGeohashes.size());
 
+            // If the interior scan found nothing (e.g. a highly concave polygon whose
+            // bounding-box centre lands outside the shape), fall back to the centroid of
+            // each feature's polygon so at least one representative is always produced.
+            if (representativeGeohashes.isEmpty()) {
+                addCentroidFallbackGeohashes(geofenceFeatureCollection, gridPrecision, gridSize,
+                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+            }
+
             if (representativeGeohashes.isEmpty()) {
                 throw new NoAvailableGeohashException("No available representative geohashes found (area saturated)");
             }
 
+            // For small polygons (circles, intersections) the 4-cell scan may produce
+            // fewer representatives than desired for RSU coverage. Walk the boundary to
+            // top up to the configured minimum, spacing additions via affectedGeohashes
+            // so they can never be adjacent to each other or to scan results.
             int minGeohashes = geofenceProperties.getLimits().getMinGeohashes();
             if (representativeGeohashes.size() < minGeohashes) {
                 log.debug("Below minimum geohashes ({} < {}), running boundary enforcement pass",
@@ -921,23 +933,52 @@ public class GeohashUtils {
     }
 
     /**
-     * Second-pass minimum boundary enforcement.
-     *
-     * Iterates over each Polygon exterior ring (vertices + interpolated edge points)
-     * in the FeatureCollection and adds non-clustered center geohashes until
-     * {@code minGeohashes} is reached. Unlike the normal pass the strict
-     * "any 3x3 overlap → drop" check is relaxed, but the "center already
-     * in affectedGeohashes → skip" guard is still applied so that adjacent
-     * geohashes are never added next to an existing representative. When a new
-     * representative is accepted its full 3×3 grid is reserved in
-     * {@code affectedGeohashes}, preventing clustering within this pass too.
+     * Fallback used only when the interior scan produced zero results (e.g. a
+     * highly concave polygon whose bounding-box centre falls outside the shape).
+     * Computes the JTS centroid of each polygon feature and adds its geohash so
+     * that every valid polygon always yields at least one representative.
      */
-    private void enforceMinimumBoundaryGeohashes(
+    private void addCentroidFallbackGeohashes(
             GeofenceFeatureCollection geofenceFeatureCollection,
             int gridPrecision,
             int gridSize,
             double latStep,
             double lonStep,
+            Set<String> affectedGeohashes,
+            List<String> representativeGeohashes,
+            Set<String> existingUsedGeohashes) {
+        if (geofenceFeatureCollection == null || geofenceFeatureCollection.getFeatures() == null) {
+            return;
+        }
+        for (var feature : geofenceFeatureCollection.getFeatures()) {
+            if (feature.getGeometry() == null) {
+                continue;
+            }
+            try {
+                Geometry jts = convertCustomGeometryToJTS(feature.getGeometry());
+                if (jts == null) {
+                    continue;
+                }
+                org.locationtech.jts.geom.Point centroid = jts.getCentroid();
+                processCoordinate(centroid.getY(), centroid.getX(), gridPrecision, gridSize,
+                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+            } catch (Exception e) {
+                log.warn("Error computing centroid fallback geohash: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Walk the boundary of each Polygon feature (vertices + interpolated edge
+     * points) and add well-spaced representatives until {@code minGeohashes} is
+     * reached. Each accepted candidate reserves its full 3×3 grid in
+     * {@code affectedGeohashes}, so no two boundary additions — and no boundary
+     * addition vs. any scan result — can be adjacent.
+     */
+    private void enforceMinimumBoundaryGeohashes(
+            GeofenceFeatureCollection geofenceFeatureCollection,
+            int gridPrecision, int gridSize,
+            double latStep, double lonStep,
             Set<String> affectedGeohashes,
             List<String> representativeGeohashes,
             Set<String> existingUsedGeohashes,
@@ -961,7 +1002,7 @@ public class GeohashUtils {
                 continue;
             }
 
-            // Exterior ring is index 0: List<List<Double>> where each inner list is [lon, lat]
+            // Exterior ring — each inner list is [lon, lat]
             List<List<Double>> ring = polygon.getCoordinates().get(0);
             if (ring == null || ring.size() < 2) {
                 continue;
@@ -974,10 +1015,8 @@ public class GeohashUtils {
                     continue;
                 }
 
-                double fromLon = from.get(0);
-                double fromLat = from.get(1);
-                double toLon = to.get(0);
-                double toLat = to.get(1);
+                double fromLon = from.get(0), fromLat = from.get(1);
+                double toLon   = to.get(0),   toLat   = to.get(1);
 
                 // Vertex itself
                 if (addBoundaryGeohash(fromLat, fromLon, gridPrecision, gridSize, latStep, lonStep,
@@ -987,9 +1026,8 @@ public class GeohashUtils {
                 }
 
                 // Interpolated edge points
-                Coordinate startCoord = new Coordinate(fromLon, fromLat);
-                Coordinate endCoord = new Coordinate(toLon, toLat);
-                int numPoints = calculateInterpolationPoints(startCoord, endCoord);
+                int numPoints = calculateInterpolationPoints(
+                        new Coordinate(fromLon, fromLat), new Coordinate(toLon, toLat));
                 for (int j = 1; j < numPoints; j++) {
                     double ratio = (double) j / numPoints;
                     double lat = fromLat + (toLat - fromLat) * ratio;
@@ -1005,18 +1043,13 @@ public class GeohashUtils {
     }
 
     /**
-     * Encodes {@code (lat, lon)} and adds it to {@code representativeGeohashes} if:
-     * <ul>
-     *   <li>its center geohash is not already covered by any 3×3 grid in
-     *       {@code affectedGeohashes} (prevents clustering), and</li>
-     *   <li>it is not claimed by another active deployment
-     *       ({@code existingUsedGeohashes}).</li>
-     * </ul>
-     * On success the representative's 3×3 grid is reserved in
-     * {@code affectedGeohashes} so subsequent candidates in the same pass are
-     * spaced correctly.
+     * Encode {@code (lat, lon)} and add it to {@code representativeGeohashes} if its
+     * center cell is not already reserved in {@code affectedGeohashes} (prevents
+     * clustering) and, unless cross-deployment sharing is allowed, not already
+     * claimed by another active deployment. On success its full 3×3 grid is
+     * reserved so subsequent candidates stay properly spaced.
      *
-     * @return {@code true} if the geohash was newly added, {@code false} otherwise
+     * @return {@code true} if the geohash was newly added
      */
     private boolean addBoundaryGeohash(double lat, double lon,
             int gridPrecision, int gridSize, double latStep, double lonStep,
@@ -1026,18 +1059,14 @@ public class GeohashUtils {
         try {
             String geohash = encodeGeohash(lat, lon, gridPrecision);
 
-            // Skip if this point's cell is already inside an existing 3x3 grid
             if (affectedGeohashes.contains(geohash)) {
                 return false;
             }
-            // When allowOverlappingGeohashes is true, cross-deployment sharing is
-            // permitted, so existingUsedGeohashes is ignored.
             boolean allowSharing = geofenceProperties.getLimits().isAllowOverlappingGeohashes();
             if (!allowSharing && existingUsedGeohashes != null && existingUsedGeohashes.contains(geohash)) {
                 return false;
             }
 
-            // Claim the 3x3 grid so the next candidate in this pass stays spaced
             List<String> grid = generate3x3GridOptimized(lat, lon, gridPrecision, gridSize, latStep, lonStep);
             affectedGeohashes.addAll(grid);
             representativeGeohashes.add(geohash);
