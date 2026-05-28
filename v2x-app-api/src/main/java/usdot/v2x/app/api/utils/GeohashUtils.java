@@ -884,12 +884,18 @@ public class GeohashUtils {
             double stepLat = latStep * 4;
             double stepLon = lonStep * 4;
 
-            // Offset by half a step so the first scan row/column lands in the center of the
-            // first band rather than on the bounding-box edge. This prevents narrow corridor
-            // sections (whose lat/lon extent is less than one full step) from being missed
-            // when their boundary coincides with the scan-grid origin.
-            double startLat = envelope.getMinY() + stepLat / 2.0;
-            double startLon = envelope.getMinX() + stepLon / 2.0;
+            // Align the scan grid to the polygon's bounding-box center rather than its
+            // minimum corner. Starting from minX/minY risks placing the first scan line
+            // exactly on the polygon's boundary (contains() = false) while the next line
+            // overshoots a narrow tapered section entirely. Centering the grid ensures
+            // that every tapered tip — at either end of the path — is within half a step
+            // of a scan line, so 4-cell-spaced coverage works for curved corridors too.
+            double centerLat = (envelope.getMinY() + envelope.getMaxY()) / 2.0;
+            double centerLon = (envelope.getMinX() + envelope.getMaxX()) / 2.0;
+            double startLat = centerLat
+                    - Math.floor((centerLat - envelope.getMinY()) / stepLat) * stepLat;
+            double startLon = centerLon
+                    - Math.floor((centerLon - envelope.getMinX()) / stepLon) * stepLon;
 
             for (double lat = startLat; lat <= envelope.getMaxY(); lat += stepLat) {
                 for (double lon = startLon; lon <= envelope.getMaxX(); lon += stepLon) {
