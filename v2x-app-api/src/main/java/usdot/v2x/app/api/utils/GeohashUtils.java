@@ -567,6 +567,17 @@ public class GeohashUtils {
             if (representativeGeohashes.isEmpty()) {
                 throw new NoAvailableGeohashException("No available representative geohashes found (area saturated)");
             }
+
+            int minGeohashes = geofenceProperties.getLimits().getMinGeohashes();
+            if (representativeGeohashes.size() < minGeohashes) {
+                log.debug("Below minimum geohashes ({} < {}), running boundary enforcement pass",
+                        representativeGeohashes.size(), minGeohashes);
+                enforceMinimumBoundaryGeohashes(geofenceFeatureCollection, gridPrecision,
+                        representativeGeohashes, existingUsedGeohashes, minGeohashes);
+                log.debug("After boundary enforcement: {} representative geohashes",
+                        representativeGeohashes.size());
+            }
+
             return representativeGeohashes;
         } catch (NoAvailableGeohashException e) {
             // propagate as-is so API can return 409
@@ -705,11 +716,23 @@ public class GeohashUtils {
     private void processPolygon(Polygon polygon, int gridPrecision, int gridSize,
             double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
             Set<String> existingUsedGeohashes) {
-        // Process exterior ring
+        // Process exterior ring vertices
         Coordinate[] exteriorCoords = polygon.getExteriorRing().getCoordinates();
         for (Coordinate coord : exteriorCoords) {
             processCoordinate(coord.y, coord.x, gridPrecision, gridSize,
                     latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+        }
+
+        // Interpolate along exterior ring edges (~1 point per 50m, mirrors processLineString)
+        for (int i = 0; i < exteriorCoords.length - 1; i++) {
+            int numPoints = calculateInterpolationPoints(exteriorCoords[i], exteriorCoords[i + 1]);
+            for (int j = 1; j < numPoints; j++) {
+                double ratio = (double) j / numPoints;
+                double lat = exteriorCoords[i].y + (exteriorCoords[i + 1].y - exteriorCoords[i].y) * ratio;
+                double lon = exteriorCoords[i].x + (exteriorCoords[i + 1].x - exteriorCoords[i].x) * ratio;
+                processCoordinate(lat, lon, gridPrecision, gridSize,
+                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+            }
         }
 
         // Process interior rings (holes)
@@ -896,6 +919,105 @@ public class GeohashUtils {
             log.warn("Error in polygon interpolation with filtering: {}", e.getMessage());
             throw new NoAvailableGeohashException(e.getMessage(), e);
         }
+    }
+
+    /**
+     * Second-pass minimum boundary enforcement.
+     *
+     * Iterates over each Polygon exterior ring (vertices + interpolated edge points)
+     * in the FeatureCollection and directly adds center geohashes until
+     * {@code minGeohashes} is reached. Unlike the normal pass, there is no 3x3
+     * overlap check — only duplicate and existing-deployment checks are applied.
+     * This guarantees perimeter coverage when the strict overlap filter would
+     * otherwise leave fewer than the configured minimum.
+     */
+    private void enforceMinimumBoundaryGeohashes(
+            GeofenceFeatureCollection geofenceFeatureCollection,
+            int gridPrecision,
+            List<String> representativeGeohashes,
+            Set<String> existingUsedGeohashes,
+            int minGeohashes) {
+        if (geofenceFeatureCollection == null || geofenceFeatureCollection.getFeatures() == null) {
+            return;
+        }
+
+        outer:
+        for (var feature : geofenceFeatureCollection.getFeatures()) {
+            if (feature.getGeometry() == null) {
+                continue;
+            }
+            if (!(feature.getGeometry() instanceof usdot.v2x.app.api.models.etx.configuration.geometry.Polygon)) {
+                continue;
+            }
+            usdot.v2x.app.api.models.etx.configuration.geometry.Polygon polygon =
+                    (usdot.v2x.app.api.models.etx.configuration.geometry.Polygon) feature.getGeometry();
+
+            if (polygon.getCoordinates() == null || polygon.getCoordinates().isEmpty()) {
+                continue;
+            }
+
+            // Exterior ring is index 0: List<List<Double>> where each inner list is [lon, lat]
+            List<List<Double>> ring = polygon.getCoordinates().get(0);
+            if (ring == null || ring.size() < 2) {
+                continue;
+            }
+
+            for (int i = 0; i < ring.size() - 1; i++) {
+                List<Double> from = ring.get(i);
+                List<Double> to = ring.get(i + 1);
+                if (from == null || from.size() < 2 || to == null || to.size() < 2) {
+                    continue;
+                }
+
+                double fromLon = from.get(0);
+                double fromLat = from.get(1);
+                double toLon = to.get(0);
+                double toLat = to.get(1);
+
+                // Vertex itself
+                if (addBoundaryGeohash(fromLat, fromLon, gridPrecision,
+                        representativeGeohashes, existingUsedGeohashes)
+                        && representativeGeohashes.size() >= minGeohashes) {
+                    break outer;
+                }
+
+                // Interpolated edge points
+                Coordinate startCoord = new Coordinate(fromLon, fromLat);
+                Coordinate endCoord = new Coordinate(toLon, toLat);
+                int numPoints = calculateInterpolationPoints(startCoord, endCoord);
+                for (int j = 1; j < numPoints; j++) {
+                    double ratio = (double) j / numPoints;
+                    double lat = fromLat + (toLat - fromLat) * ratio;
+                    double lon = fromLon + (toLon - fromLon) * ratio;
+                    if (addBoundaryGeohash(lat, lon, gridPrecision,
+                            representativeGeohashes, existingUsedGeohashes)
+                            && representativeGeohashes.size() >= minGeohashes) {
+                        break outer;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Encodes {@code (lat, lon)} and adds it to {@code representativeGeohashes} if
+     * it is not already present and not claimed by another active deployment.
+     *
+     * @return {@code true} if the geohash was newly added, {@code false} otherwise
+     */
+    private boolean addBoundaryGeohash(double lat, double lon, int gridPrecision,
+            List<String> representativeGeohashes, Set<String> existingUsedGeohashes) {
+        try {
+            String geohash = encodeGeohash(lat, lon, gridPrecision);
+            if (!representativeGeohashes.contains(geohash)
+                    && (existingUsedGeohashes == null || !existingUsedGeohashes.contains(geohash))) {
+                representativeGeohashes.add(geohash);
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("Error encoding boundary geohash at ({}, {}): {}", lat, lon, e.getMessage());
+        }
+        return false;
     }
 
     /**
