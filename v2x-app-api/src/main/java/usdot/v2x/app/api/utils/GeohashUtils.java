@@ -802,11 +802,15 @@ public class GeohashUtils {
 
             // Only add this representative if there's no overlap with grids in this run
             if (!hasOverlap) {
+                // When allowOverlappingGeohashes is true, cross-deployment sharing is
+                // permitted, so existingUsedGeohashes is ignored entirely.
+                boolean allowSharing = geofenceProperties.getLimits().isAllowOverlappingGeohashes();
+
                 // Choose a representative geohash, preferring center but avoiding already-used
                 // ones
                 String chosen = null;
                 // Center first
-                if ((existingUsedGeohashes == null || !existingUsedGeohashes.contains(geohash))
+                if ((allowSharing || existingUsedGeohashes == null || !existingUsedGeohashes.contains(geohash))
                         && !representativeGeohashes.contains(geohash)) {
                     chosen = geohash;
                 } else {
@@ -815,18 +819,19 @@ public class GeohashUtils {
                         if (candidate.equals(geohash)) {
                             continue;
                         }
-                        if ((existingUsedGeohashes == null || !existingUsedGeohashes.contains(candidate))
+                        if ((allowSharing || existingUsedGeohashes == null || !existingUsedGeohashes.contains(candidate))
                                 && !representativeGeohashes.contains(candidate)) {
                             chosen = candidate;
                             break;
                         }
                     }
                 }
-                // If all 3x3 candidates are already used, fail immediately
+                // If all 9 cells in this grid are claimed by other active deployments,
+                // skip this scan point rather than aborting the entire deployment.
+                // Total saturation is reported by the empty-list check after the full scan.
                 if (chosen == null) {
-                    throw new NoAvailableGeohashException(
-                            "No available representative geohash for 3x3 grid at lat=" + lat
-                                    + ", lon=" + lon);
+                    log.debug("All 3x3 candidates already used at lat={}, lon={} — skipping", lat, lon);
+                    return;
                 }
                 // Mark all geohashes in this grid as affected and record representative
                 affectedGeohashes.addAll(gridGeohashes);
@@ -1025,7 +1030,10 @@ public class GeohashUtils {
             if (affectedGeohashes.contains(geohash)) {
                 return false;
             }
-            if (existingUsedGeohashes != null && existingUsedGeohashes.contains(geohash)) {
+            // When allowOverlappingGeohashes is true, cross-deployment sharing is
+            // permitted, so existingUsedGeohashes is ignored.
+            boolean allowSharing = geofenceProperties.getLimits().isAllowOverlappingGeohashes();
+            if (!allowSharing && existingUsedGeohashes != null && existingUsedGeohashes.contains(geohash)) {
                 return false;
             }
 
