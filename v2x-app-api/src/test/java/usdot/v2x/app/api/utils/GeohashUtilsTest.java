@@ -116,7 +116,7 @@ class GeohashUtilsTest {
         assertTrue(geohashes.size() > 3,
                 "Long corridor should produce multiple representatives, got: " + geohashes);
         assertTrue(geohashes.size() < 25,
-                "Long corridor should stay sparse (9×9 tiling), got: " + geohashes);
+                "Long corridor should stay sparse (3×3 tiling), got: " + geohashes);
         assertEquals(geohashes.size(), new HashSet<>(geohashes).size(), "Representatives must be unique");
     }
 
@@ -290,12 +290,12 @@ class GeohashUtilsTest {
     private double latStep(int precision) {
         int bits = precision * 5;
         int latBits = bits / 2;
-        return 90.0 / Math.pow(2, latBits);
+        return 180.0 / Math.pow(2, latBits);
     }
 
     private double lonStep(int precision) {
         int bits = precision * 5;
         int lonBits = (bits + 1) / 2;
-        return 180.0 / Math.pow(2, lonBits);
+        return 360.0 / Math.pow(2, lonBits);
     }
 }

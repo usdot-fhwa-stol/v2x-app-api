@@ -36,12 +36,16 @@ public class GeohashUtils {
     /** Level-7 geohash precision used for deployment representatives. */
     private static final int GRID_PRECISION = 7;
     /**
-     * One representative per this many cells in each direction (~9×9 coverage
-     * zone).
+     * One representative per this many cells in each direction (3×3 coverage zone).
+     * Subscribers receive messages for their cell + all 8 neighbors (Chebyshev
+     * radius 1), so a block of 3 is the largest tile where a single center
+     * representative is guaranteed to reach every subscriber in that tile.
      */
-    private static final int PRIMARY_BLOCK_SIZE = 9;
+    private static final int PRIMARY_BLOCK_SIZE = 3;
     /**
      * Minimum cell-index separation when topping up small regions to minGeohashes.
+     * Must be >= PRIMARY_BLOCK_SIZE to prevent supplement cells from landing inside
+     * the coverage zone of an existing representative.
      */
     private static final int SUPPLEMENT_MIN_CELL_SEPARATION = 3;
 
@@ -431,29 +435,28 @@ public class GeohashUtils {
     }
 
     /**
-     * Calculate latitude step size for geohash grid
+     * Calculate latitude step size for geohash grid.
+     * Latitude spans 180° (−90 to +90); with {@code latBits} bits there are
+     * 2^latBits rows, so each row is 180° / 2^latBits wide.
      */
     private double calculateLatStep(int precision) {
         return latStepCache.computeIfAbsent(precision, p -> {
-            // More accurate step size based on geohash precision
-            // Geohash uses base32 encoding, so each character represents 5 bits
-            // For latitude: 90 degrees / 2^(bits/2)
             int bits = p * 5;
             int latBits = bits / 2;
-            return 90.0 / Math.pow(2, latBits);
+            return 180.0 / Math.pow(2, latBits);
         });
     }
 
     /**
-     * Calculate longitude step size for geohash grid
+     * Calculate longitude step size for geohash grid.
+     * Longitude spans 360° (−180 to +180); with {@code lonBits} bits there are
+     * 2^lonBits columns, so each column is 360° / 2^lonBits wide.
      */
     private double calculateLonStep(int precision) {
         return lonStepCache.computeIfAbsent(precision, p -> {
-            // More accurate step size based on geohash precision
-            // For longitude: 180 degrees / 2^(bits/2)
             int bits = p * 5;
-            int lonBits = (bits + 1) / 2; // Longitude gets the extra bit for odd precision
-            return 180.0 / Math.pow(2, lonBits);
+            int lonBits = (bits + 1) / 2; // Longitude gets the extra bit for odd total
+            return 360.0 / Math.pow(2, lonBits);
         });
     }
 
@@ -498,17 +501,6 @@ public class GeohashUtils {
      */
     private List<String> extractGeohashesInternal(JsonNode geojson, int precision,
             Set<String> existingUsedGeohashes) {
-        int gridPrecision = 7; // Use level 7 for geohash filtering
-        int gridSize = 3;
-
-        // Track geohashes that are already covered by existing 3x3 grids
-        Set<String> affectedGeohashes = new HashSet<>();
-        List<String> representativeGeohashes = new ArrayList<>();
-
-        // Pre-calculate step sizes for performance
-        double latStep = calculateLatStep(gridPrecision);
-        double lonStep = calculateLonStep(gridPrecision);
-
         try {
             Set<String> intersecting = new HashSet<>();
             if (geojson.has("type")) {
