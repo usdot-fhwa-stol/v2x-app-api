@@ -13,6 +13,8 @@ import usdot.v2x.app.api.services.ErrorLoggingService;
 import lombok.extern.slf4j.Slf4j;
 import usdot.v2x.app.api.exceptions.NoAvailableGeohashException;
 import org.locationtech.jts.geom.*;
+import org.locationtech.jts.geom.prep.PreparedGeometry;
+import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
 import org.locationtech.spatial4j.distance.DistanceUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -645,12 +647,15 @@ public class GeohashUtils {
                 return cellsFromGeometryCentroid(geometry, precision);
             }
 
+            // Prepare once so the spatial index is built before the per-cell loop.
+            PreparedGeometry prepared = PreparedGeometryFactory.prepare(geometry);
+
             TwoGeoHashBoundingBox geoHashBox = TwoGeoHashBoundingBox.withCharacterPrecision(bbox, precision);
             BoundingBoxGeoHashIterator iterator = new BoundingBoxGeoHashIterator(geoHashBox);
 
             while (iterator.hasNext()) {
                 GeoHash cell = iterator.next();
-                if (geometryIntersectsGeohashCell(geometry, cell)) {
+                if (geometryIntersectsGeohashCell(prepared, cell)) {
                     cells.add(cell.toBase32());
                 }
             }
@@ -731,7 +736,7 @@ public class GeohashUtils {
         return cells;
     }
 
-    private boolean geometryIntersectsGeohashCell(Geometry geometry, GeoHash cell) {
+    private boolean geometryIntersectsGeohashCell(PreparedGeometry prepared, GeoHash cell) {
         BoundingBox bb = cell.getBoundingBox();
         org.locationtech.jts.geom.Polygon cellPolygon = geometryFactory.createPolygon(new Coordinate[] {
                 new Coordinate(bb.getWestLongitude(), bb.getSouthLatitude()),
@@ -740,7 +745,7 @@ public class GeohashUtils {
                 new Coordinate(bb.getWestLongitude(), bb.getNorthLatitude()),
                 new Coordinate(bb.getWestLongitude(), bb.getSouthLatitude())
         });
-        return geometry.intersects(cellPolygon);
+        return prepared.intersects(cellPolygon);
     }
 
     /**
@@ -789,9 +794,10 @@ public class GeohashUtils {
             selectedIndices.add(cellIndices(GeoHash.fromGeohashString(cell), latStep, lonStep));
         }
 
+        Set<String> selectedSet = new HashSet<>(selected);
         double[] centroid = centroidOfCells(intersectingCells);
         List<String> candidates = intersectingCells.stream()
-                .filter(cell -> !selected.contains(cell))
+                .filter(cell -> !selectedSet.contains(cell))
                 .filter(cell -> isCellAvailable(cell, existingUsed, allowSharing))
                 .sorted(Comparator.comparingDouble(cell -> distanceToPoint(cell, centroid[0], centroid[1])))
                 .toList();

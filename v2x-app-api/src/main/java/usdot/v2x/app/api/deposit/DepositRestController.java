@@ -5,6 +5,7 @@ import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentResponse;
+import usdot.v2x.app.api.models.geofence.GeohashPreviewResponse;
 import usdot.v2x.app.api.services.GeofenceDeploymentService;
 import usdot.v2x.app.api.utils.GeofenceDeploymentConverter;
 import usdot.v2x.app.api.config.DepositProperties;
@@ -127,6 +128,39 @@ public class DepositRestController {
             ErrorResponse errorResponse = new ErrorResponse("INTERNAL_SERVER_ERROR",
                     "An internal server error occurred while processing the request");
             return ResponseEntity.status(500).body(errorResponse);
+        }
+    }
+
+    @PostMapping(value = "/geofence/preview", consumes = APPLICATION_JSON_VALUE)
+    @Operation(summary = "Preview geohashes for a V2X message", description = "Returns the geohashes that would be selected if the provided message were deposited, "
+            + "without creating a deployment. Useful for validating coverage before committing a deposit. "
+            + "By default the response is computed without a database round-trip (fastest path). "
+            + "Pass `check_conflicts=true` to apply the same collision-avoidance logic used during deposit.", security = @SecurityRequirement(name = "BearerAuth"), requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "V2X message to preview geohash selection for", required = true, content = @Content(mediaType = "application/json", schema = @Schema(implementation = DepositRequest.class))), responses = {
+                    @ApiResponse(responseCode = "200", description = "Geohash preview computed successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = GeohashPreviewResponse.class))),
+                    @ApiResponse(responseCode = "400", description = "Bad request - invalid configuration data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication", content = @Content(mediaType = "application/json")),
+                    @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions", content = @Content(mediaType = "application/json")),
+                    @ApiResponse(responseCode = "409", description = "Conflict - no available geohash for the deployment area", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "422", description = "Unprocessable entity - invalid ASN.1 data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+            })
+    public ResponseEntity<?> previewGeofenceGeohashes(
+            @Parameter(description = "V2X message to preview geohash selection for", required = true) @RequestBody DepositRequest request,
+            @Parameter(description = "When true, avoids geohashes already claimed by active deployments (requires a DB query). Default false for fastest response.") @RequestParam(value = "check_conflicts", defaultValue = "false") boolean checkConflicts) {
+        try {
+            GeohashPreviewResponse preview = geofenceDeploymentConverter.previewGeohashes(request, checkConflicts);
+            return ResponseEntity.ok(preview);
+        } catch (ErrorResponseException ex) {
+            log.error("Error computing geohash preview: {}", ex.getMessage(), ex);
+            return ResponseEntity.status(ex.getStatusCode()).body(ex.getErrorResponse());
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid ASN.1 data in geohash preview: {}", e.getMessage(), e);
+            return ResponseEntity.status(422).body(new ErrorResponse("INVALID_ASN_DATA",
+                    "Invalid ASN.1 data: " + e.getMessage()));
+        } catch (Exception e) {
+            log.error("Internal error computing geohash preview: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(new ErrorResponse("INTERNAL_SERVER_ERROR",
+                    "An internal server error occurred while processing the request"));
         }
     }
 

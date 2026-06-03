@@ -7,6 +7,7 @@ import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
+import usdot.v2x.app.api.models.geofence.GeohashPreviewResponse;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
 
@@ -176,8 +177,60 @@ public class GeofenceDeploymentConverter {
     }
 
     /**
+     * Compute the geohashes that would be selected for a deposit request without
+     * persisting anything. Returns the resolved geofence and selected geohashes.
+     */
+    /**
+     * @param checkConflicts when {@code true}, avoids geohashes already claimed by
+     *                       active deployments (requires a DB round-trip); when
+     *                       {@code false} (default), returns the raw selection
+     *                       without querying active state — faster and suitable for
+     *                       planning purposes.
+     */
+    public GeohashPreviewResponse previewGeohashes(DepositRequest request, boolean checkConflicts) {
+        MessageFrame<?> messageFrame;
+        try {
+            messageFrame = parseMessageFrame(request.getAsn1Hex());
+        } catch (JsonProcessingException e) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("Failed to parse ASN.1 message", e.getMessage()),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        String geofenceId = messageFrame == null
+                ? generateFallbackGeofenceId(request.getAsn1Hex())
+                : generateGeofenceIdByMessageType(messageFrame, request.getAsn1Hex());
+
+        GeofenceFeatureCollection geofence = request.getOverrideGeofence();
+        if (geofence == null) {
+            if (messageFrame == null) {
+                throw new ErrorResponseException(
+                        new ErrorResponse("Failed to detect message type", "ASN.1 parsing returned null frame"),
+                        HttpStatus.UNPROCESSABLE_ENTITY);
+            }
+            geofence = extractGeofenceFromMessage(messageFrame);
+        }
+
+        try {
+            List<String> geohashes = checkConflicts
+                    ? geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence, geofenceId)
+                    : geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence, 7, java.util.Set.of());
+            return GeohashPreviewResponse.builder()
+                    .geofenceId(geofenceId)
+                    .geofence(geofence)
+                    .geohashes(geohashes)
+                    .geohashCount(geohashes.size())
+                    .build();
+        } catch (usdot.v2x.app.api.exceptions.NoAvailableGeohashException ex) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
      * Generate a unique Geofence ID based on message type
-     * 
+     *
      * @param messageFrame The parsed message frame
      * @param hexPayload   The hex payload
      * @return A unique Geofence ID
