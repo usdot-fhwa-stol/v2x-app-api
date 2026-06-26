@@ -1,5 +1,5 @@
 {
-    "version": "2.1.0",
+    "version": "2.2.0",
     "tims": [
         {
             "name": "closed-to-traffic, local-traffic, only",
@@ -1522,6 +1522,36 @@
                 "7169"
             ],
             "graphic": "look_out_for_workers.png"
+        },
+        {
+            "name": "flooding, ahead",
+            "source": "wydot-demo",
+            "type": "advisory",
+            "codes": [
+                "1301",
+                "13569"
+            ],
+            "graphic": "road_flooded_ahead.png"
+        },
+        {
+            "name": "road construction, be-prepared-to-stop",
+            "source": "wydot-demo",
+            "type": "workZone",
+            "codes": [
+                "1025",
+                "7201"
+            ],
+            "graphic": "road_construction_be_prepared_to_stop.png"
+        },
+        {
+            "name": "closed-to-traffic, local-traffic, only",
+            "source": "wydot-demo",
+            "type": "advisory",
+            "codes": [
+                "769",
+                "2567"
+            ],
+            "graphic": "closed_to_traffic.png"
         }
     ]
 }
