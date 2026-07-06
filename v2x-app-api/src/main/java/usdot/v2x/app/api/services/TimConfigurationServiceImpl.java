@@ -1,5 +1,6 @@
 package usdot.v2x.app.api.services;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import usdot.v2x.app.api.models.geofence.TimConfigurationResponse;
 
@@ -46,6 +47,32 @@ public class TimConfigurationServiceImpl implements TimConfigurationService {
             } catch (IOException e) {
                 log.error("Error reading TIM configuration file", e);
                 throw new RuntimeException("Failed to read TIM configuration", e);
+            }
+        });
+    }
+
+    @Override
+    public Mono<TimConfigurationResponse> updateTimConfiguration(TimConfigurationResponse configuration) {
+        return Mono.fromCallable(() -> {
+            try {
+                Path configPath = Paths.get(timConfigFilePath);
+                Path parentDir = configPath.getParent();
+                if (parentDir != null) {
+                    Files.createDirectories(parentDir);
+                }
+
+                String jsonContent = objectMapper.writerWithDefaultPrettyPrinter()
+                        .writeValueAsString(configuration);
+                Files.writeString(configPath, jsonContent);
+
+                log.info("Updated TIM configuration at: {}", timConfigFilePath);
+                return configuration;
+            } catch (JsonProcessingException e) {
+                log.error("Error serializing TIM configuration", e);
+                throw new RuntimeException("Failed to serialize TIM configuration", e);
+            } catch (IOException e) {
+                log.error("Error writing TIM configuration file", e);
+                throw new RuntimeException("Failed to write TIM configuration", e);
             }
         });
     }

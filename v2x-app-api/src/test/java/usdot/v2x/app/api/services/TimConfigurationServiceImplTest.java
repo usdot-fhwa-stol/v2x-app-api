@@ -1,6 +1,7 @@
 package usdot.v2x.app.api.services;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import usdot.v2x.app.api.models.geofence.TimConfigurationResponse;
 import usdot.v2x.app.api.models.geofence.TimOverlay;
 import usdot.v2x.app.api.models.geofence.TimPhrase;
@@ -23,7 +24,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -119,6 +122,49 @@ class TimConfigurationServiceImplTest {
                 .verify();
 
         verify(objectMapper).readValue(anyString(), eq(TimConfigurationResponse.class));
+    }
+
+    @Test
+    @DisplayName("Should successfully update TIM configuration")
+    void testUpdateTimConfiguration_Success() throws Exception {
+        // Given
+        Path configPath = Paths.get(testConfigFilePath);
+        Files.createDirectories(configPath.getParent());
+        ObjectWriter objectWriter = mock(ObjectWriter.class);
+        when(objectMapper.writerWithDefaultPrettyPrinter()).thenReturn(objectWriter);
+        when(objectWriter.writeValueAsString(testConfigResponse))
+                .thenReturn("{\"version\":\"0.1\",\"tims\":[]}");
+
+        // When
+        Mono<TimConfigurationResponse> result = timConfigurationService.updateTimConfiguration(testConfigResponse);
+
+        // Then
+        StepVerifier.create(result)
+                .expectNext(testConfigResponse)
+                .verifyComplete();
+
+        verify(objectWriter).writeValueAsString(testConfigResponse);
+        assert Files.exists(configPath);
+    }
+
+    @Test
+    @DisplayName("Should handle JSON serialization error when updating TIM configuration")
+    void testUpdateTimConfiguration_SerializationError() throws Exception {
+        // Given
+        ObjectWriter objectWriter = mock(ObjectWriter.class);
+        when(objectMapper.writerWithDefaultPrettyPrinter()).thenReturn(objectWriter);
+        when(objectWriter.writeValueAsString(any(TimConfigurationResponse.class)))
+                .thenThrow(new RuntimeException("JSON serialization error"));
+
+        // When
+        Mono<TimConfigurationResponse> result = timConfigurationService.updateTimConfiguration(testConfigResponse);
+
+        // Then
+        StepVerifier.create(result)
+                .expectError(RuntimeException.class)
+                .verify();
+
+        verify(objectWriter).writeValueAsString(testConfigResponse);
     }
 
     @Test

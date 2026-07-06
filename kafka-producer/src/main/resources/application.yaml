@@ -1,7 +1,25 @@
 kafka-producer:
+  publishing:
+    # Override at deploy time via KAFKA_PRODUCER_PUBLISHING_THREAD_POOL_SIZE for higher ingestion volume.
+    # When unset or zero, defaults to min(availableProcessors * 2, 20).
+    thread-pool-size: ${KAFKA_PRODUCER_PUBLISHING_THREAD_POOL_SIZE:0}
+    # Override at deploy time via KAFKA_PRODUCER_PUBLISHING_FREQUENCY_HZ (e.g. 1, 2, 0.5).
+    # When unset or zero, defaults to 1 Hz.
+    frequency-hz: ${KAFKA_PRODUCER_PUBLISHING_FREQUENCY_HZ:0}
+    # Override at deploy time via KAFKA_PRODUCER_PUBLISHING_BATCH_TIMEOUT (e.g. 5s, 500ms, 1m).
+    batch-timeout: ${KAFKA_PRODUCER_PUBLISHING_BATCH_TIMEOUT:5s}
   kafka:
     topics:
       geo-hash-routed-msg: 'topic.GeoHashRoutedMsg'
+  postgres:
+    query:
+      # Override at deploy time via KAFKA_PRODUCER_POSTGRES_QUERY_FIND_GEOHASH_PAYLOADS if
+      # entity fields or join conditions change (no code rebuild required).
+      find-geohash-payloads: >
+        SELECT new com.neaera.cvmec.kafkaproducer.models.postgres.derived.GeohashPayloadMessage(gg.geohash, gd.hexPayload)
+        FROM GeofenceGeohashes gg
+        JOIN GeofenceDeployments gd ON gg.geofenceDeploymentId = gd.id
+        WHERE gd.isActive = true
 
 spring:
   application:

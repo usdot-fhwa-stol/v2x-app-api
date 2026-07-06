@@ -32,7 +32,7 @@ public class AsyncConfig implements AsyncConfigurer {
 
     /**
      * Perform initial cache load when the application is ready. Cached messages are
-     * published to Kafka on a 1Hz schedule by {@code PublishGeoMessagesTask}.
+     * published to Kafka on a configurable schedule (default 1 Hz) by {@code PublishGeoMessagesTask}.
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {

@@ -7,5 +7,7 @@ import reactor.core.publisher.Mono;
 public interface TimConfigurationService {
     Mono<TimConfigurationResponse> getTimConfiguration();
 
+    Mono<TimConfigurationResponse> updateTimConfiguration(TimConfigurationResponse configuration);
+
     Mono<byte[]> getTimIconsTarGz(String version);
 }

@@ -12,6 +12,8 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class GeoHashRoutedMsg {
+    private static final int LOG_HEX_PREVIEW_LENGTH = 128;
+
     private byte[] msgBytes;
     private String geohash;
 
@@ -50,5 +52,30 @@ public class GeoHashRoutedMsg {
             bytes[i / 2] = (byte) Integer.parseInt(hex.substring(i, i + 2), 16);
         }
         return bytes;
+    }
+
+    /**
+     * Compact description for logging: geohash, payload size, and a truncated hex preview.
+     */
+    public String toLogDescription() {
+        int payloadBytes = msgBytes != null ? msgBytes.length : 0;
+        return "geohash=" + geohash + ", payloadBytes=" + payloadBytes + ", payloadHex="
+                + formatHexPreview(msgBytes);
+    }
+
+    static String formatHexPreview(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+
+        StringBuilder hex = new StringBuilder(Math.min(bytes.length * 2, LOG_HEX_PREVIEW_LENGTH + 3));
+        int maxBytes = LOG_HEX_PREVIEW_LENGTH / 2;
+        for (int i = 0; i < bytes.length && i < maxBytes; i++) {
+            hex.append(String.format("%02x", bytes[i]));
+        }
+        if (bytes.length > maxBytes) {
+            hex.append("...");
+        }
+        return hex.toString();
     }
 }

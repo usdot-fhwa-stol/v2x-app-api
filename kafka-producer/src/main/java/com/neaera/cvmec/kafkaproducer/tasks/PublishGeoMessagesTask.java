@@ -1,7 +1,8 @@
 package com.neaera.cvmec.kafkaproducer.tasks;
 
-import com.neaera.cvmec.kafkaproducer.services.GeohashCacheService;
+import com.neaera.cvmec.kafkaproducer.config.PublishingProperties;
 import com.neaera.cvmec.kafkaproducer.models.GeoHashRoutedMsg;
+import com.neaera.cvmec.kafkaproducer.services.GeohashCacheService;
 import com.neaera.cvmec.kafkaproducer.services.KafkaProducerService;
 import jakarta.annotation.PreDestroy;
 import java.util.List;
@@ -21,14 +22,31 @@ public class PublishGeoMessagesTask {
     private final GeohashCacheService geohashCacheService;
     private final KafkaProducerService kafkaProducerService;
     private final ExecutorService messagePublishingExecutor;
+    private final long batchTimeoutMillis;
 
     @Autowired
-    public PublishGeoMessagesTask(GeohashCacheService geohashCacheService, KafkaProducerService kafkaProducerService) {
+    public PublishGeoMessagesTask(
+            GeohashCacheService geohashCacheService,
+            KafkaProducerService kafkaProducerService,
+            PublishingProperties publishingProperties) {
         this.geohashCacheService = geohashCacheService;
         this.kafkaProducerService = kafkaProducerService;
-        // Create a thread pool with optimal size for message publishing
-        this.messagePublishingExecutor = Executors.newFixedThreadPool(
-                Math.min(Runtime.getRuntime().availableProcessors() * 2, 20));
+        this.batchTimeoutMillis = publishingProperties.getBatchTimeoutMillis();
+        int threadPoolSize = resolveThreadPoolSize(publishingProperties.getThreadPoolSize());
+        this.messagePublishingExecutor = Executors.newFixedThreadPool(threadPoolSize);
+        log.info(
+                "Message publishing configured: {} Hz ({} ms interval), thread pool size {}, batch timeout {} ms",
+                publishingProperties.getEffectiveFrequencyHz(),
+                publishingProperties.getFixedRateMs(),
+                threadPoolSize,
+                batchTimeoutMillis);
+    }
+
+    static int resolveThreadPoolSize(int configuredThreadPoolSize) {
+        if (configuredThreadPoolSize > 0) {
+            return configuredThreadPoolSize;
+        }
+        return Math.min(Runtime.getRuntime().availableProcessors() * 2, 20);
     }
 
     /**
@@ -53,16 +71,13 @@ public class PublishGeoMessagesTask {
     }
 
     /**
-     * Publishes cached messages to Kafka at 1Hz frequency
+     * Publishes cached messages to Kafka at a configurable fixed rate (default 1 Hz).
      * This runs independently of cache updates to maintain consistent publishing
      * frequency but is still thread-safe due to the underlying cache implementation
      */
-    @Scheduled(fixedRateString = "1000") // Runs every second (1Hz)
+    @Scheduled(fixedRateString = "#{@publishingProperties.fixedRateMs}")
     public void publishCachedMessages() {
-        log.debug("Publishing cached geohash messages to Kafka");
-
         try {
-            // Fetch messages from cache
             List<GeoHashRoutedMsg> cachedMessages = geohashCacheService.getAllMessages();
 
             if (cachedMessages.isEmpty()) {
@@ -70,28 +85,35 @@ public class PublishGeoMessagesTask {
                 return;
             }
 
-            // Publish messages in parallel using CompletableFuture
+            log.debug(
+                    "Publishing {} cached geohash messages to Kafka: {}",
+                    cachedMessages.size(),
+                    cachedMessages.stream().map(GeoHashRoutedMsg::toLogDescription).collect(Collectors.joining("; ")));
+
             List<CompletableFuture<Void>> publishingTasks = cachedMessages.stream()
                     .map(message -> CompletableFuture.runAsync(() -> {
                         try {
-                            // Use protobuf serialization
                             kafkaProducerService.sendGeoHashRoutedMsgAsProtobuf(message);
+                            log.debug("Published message: {}", message.toLogDescription());
                         } catch (Exception e) {
-                            log.error("Failed to publish message: {}", message, e);
+                            log.error("Failed to publish message: {}", message.toLogDescription(), e);
                         }
                     }, messagePublishingExecutor))
                     .collect(Collectors.toList());
 
-            // Wait for all tasks to complete
             CompletableFuture<Void> allPublishingTasks = CompletableFuture.allOf(
                     publishingTasks.toArray(new CompletableFuture[0]));
 
-            // Set a reasonable timeout to avoid blocking indefinitely
-            allPublishingTasks.get(5, TimeUnit.SECONDS);
+            allPublishingTasks.get(batchTimeoutMillis, TimeUnit.MILLISECONDS);
 
-            log.debug("Successfully published {} cached geohash messages in parallel", cachedMessages.size());
+            log.debug(
+                    "Successfully published {} cached geohash messages in parallel: {}",
+                    cachedMessages.size(),
+                    cachedMessages.stream().map(GeoHashRoutedMsg::toLogDescription).collect(Collectors.joining("; ")));
         } catch (java.util.concurrent.TimeoutException e) {
-            log.warn("Publishing timed out after 5 seconds. Some messages may still be processing.");
+            log.warn(
+                    "Publishing timed out after {} ms. Some messages may still be processing.",
+                    batchTimeoutMillis);
         } catch (Exception e) {
             log.error("Error occurred while publishing cached geohash messages", e);
         }

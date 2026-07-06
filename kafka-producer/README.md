@@ -1,6 +1,6 @@
 # CV-MEC Kafka Producer
 
-Sidecar service that reads active geofence payloads from PostgreSQL and publishes `GeoHashRoutedMsg` protobuf messages to Kafka at 1 Hz. Cache invalidation uses PostgreSQL `LISTEN` on the `table_updates` channel (requires migration `008_setup_listen_notify.sql` or `init-db.sql` triggers).
+Sidecar service that reads active geofence payloads from PostgreSQL and publishes `GeoHashRoutedMsg` protobuf messages to Kafka (default 1 Hz, configurable). Cache invalidation uses PostgreSQL `LISTEN` on the `table_updates` channel (requires migration `008_setup_listen_notify.sql` or `init-db.sql` triggers).
 
 ## Configuration
 
@@ -12,8 +12,13 @@ Sidecar service that reads active geofence payloads from PostgreSQL and publishe
 | `POSTGRES_PASSWORD` | _(empty)_ | Database password |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka brokers |
 | `SPRING_PROFILES_ACTIVE` | `default` | Set to `local` or `confluent` for profile-specific overrides. In Docker Compose, set via `KAFKA_PRODUCER_SPRING_PROFILES_ACTIVE` in `.env`. |
+| `KAFKA_PRODUCER_PUBLISHING_THREAD_POOL_SIZE` | _(unset)_ | Fixed thread pool size for parallel Kafka publishing. When unset or `0`, defaults to `min(availableProcessors * 2, 20)`. Increase for higher ingestion volume. |
+| `KAFKA_PRODUCER_PUBLISHING_FREQUENCY_HZ` | _(unset)_ | Kafka publishing frequency in Hz. When unset or `0`, defaults to `1` (one publish cycle per second). Examples: `2` for 500 ms intervals, `0.5` for 2 s intervals. |
+| `KAFKA_PRODUCER_PUBLISHING_BATCH_TIMEOUT` | `5s` | Maximum time to wait for a publish cycle to finish. Supports Spring duration format (e.g. `5s`, `500ms`, `1m`). |
 
 Topic name is configured under `kafka-producer.kafka.topics.geo-hash-routed-msg` (default: `topic.GeoHashRoutedMsg`).
+
+The JPQL query that loads active geohash payloads is externalized under `kafka-producer.postgres.query.find-geohash-payloads` in `application.yaml`. Override at deploy time with `KAFKA_PRODUCER_POSTGRES_QUERY_FIND_GEOHASH_PAYLOADS` if entity fields or join conditions change, without rebuilding the service.
 
 ## Profiles
 

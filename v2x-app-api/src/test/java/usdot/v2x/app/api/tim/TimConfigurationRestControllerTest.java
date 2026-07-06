@@ -78,6 +78,49 @@ class TimConfigurationRestControllerTest {
     }
 
     @Test
+    @DisplayName("Should successfully update TIM configuration")
+    void testUpdateTimConfiguration_Success() {
+        // Given
+        when(timConfigurationService.updateTimConfiguration(testConfigResponse))
+                .thenReturn(Mono.just(testConfigResponse));
+
+        // When
+        Mono<ResponseEntity<TimConfigurationResponse>> result = timConfigurationRestController
+                .updateTimConfiguration(testConfigResponse);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals(testConfigResponse.getVersion(), response.getBody().getVersion());
+                    assertEquals(testConfigResponse.getTims().size(), response.getBody().getTims().size());
+                })
+                .verifyComplete();
+
+        verify(timConfigurationService).updateTimConfiguration(testConfigResponse);
+    }
+
+    @Test
+    @DisplayName("Should handle service error when updating TIM configuration")
+    void testUpdateTimConfiguration_ServiceError() {
+        // Given
+        when(timConfigurationService.updateTimConfiguration(testConfigResponse))
+                .thenReturn(Mono.error(new RuntimeException("Service error")));
+
+        // When
+        Mono<ResponseEntity<TimConfigurationResponse>> result = timConfigurationRestController
+                .updateTimConfiguration(testConfigResponse);
+
+        // Then
+        StepVerifier.create(result)
+                .expectError(RuntimeException.class)
+                .verify();
+
+        verify(timConfigurationService).updateTimConfiguration(testConfigResponse);
+    }
+
+    @Test
     @DisplayName("Should handle service error when getting TIM configuration")
     void testGetTimConfiguration_ServiceError() {
         // Given

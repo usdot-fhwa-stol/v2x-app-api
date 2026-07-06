@@ -30,7 +30,7 @@ The repository consists of four main services:
    - `LISTEN/NOTIFY` on `table_updates` for geofence cache invalidation (used by kafka-producer)
 
 4. **kafka-producer**: Sidecar Spring Boot service ([`kafka-producer/`](kafka-producer/))
-   - Java 23; reads active geofence payloads from PostgreSQL and publishes `GeoHashRoutedMsg` protobuf to Kafka at 1 Hz
+   - Java 23; reads active geofence payloads from PostgreSQL and publishes `GeoHashRoutedMsg` protobuf to Kafka (default 1 Hz, configurable)
    - Reacts to Postgres `table_updates` notifications; see [`kafka-producer/README.md`](kafka-producer/README.md)
 
 ## Prerequisites
@@ -141,6 +141,9 @@ The repository consists of four main services:
    - `KAFKA_BOOTSTRAP_SERVERS`: Kafka broker list (default: `localhost:9092`). Must be reachable from the kafka-producer container when using Docker.
    - `POSTGRES_HOST`: Postgres hostname for the kafka-producer JDBC URL in Docker Compose (default: `postgres`).
    - `CONFLUENT_KEY` / `CONFLUENT_SECRET`: Confluent Cloud API key and secret (required when profile is `confluent`).
+   - `KAFKA_PRODUCER_PUBLISHING_THREAD_POOL_SIZE`: Optional fixed thread pool size for parallel Kafka publishing. When unset or `0`, defaults to `min(availableProcessors * 2, 20)`.
+   - `KAFKA_PRODUCER_PUBLISHING_FREQUENCY_HZ`: Optional Kafka publishing frequency in Hz. When unset or `0`, defaults to `1`.
+   - `KAFKA_PRODUCER_PUBLISHING_BATCH_TIMEOUT`: Optional max wait time per publish cycle (default: `5s`). Supports Spring duration format (e.g. `5s`, `500ms`, `1m`).
    - Reuses `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` from the database configuration above.
 
 ### Docker Compose Profiles

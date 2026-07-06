@@ -62,6 +62,33 @@ public class TimConfigurationRestController {
         }
     }
 
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PostMapping(value = "/configuration", produces = "application/json", consumes = "application/json")
+    @Operation(summary = "Update TIM configuration", description = "Updates the TIM ITIS phrases and metadata configuration manifest. "
+            +
+            "The request body replaces the entire configuration JSON, including the version number and TIM phrase definitions.",
+            security = @SecurityRequirement(name = "BearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "TIM configuration updated successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = TimConfigurationResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Bad request - invalid configuration data", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public Mono<ResponseEntity<TimConfigurationResponse>> updateTimConfiguration(
+            @RequestBody TimConfigurationResponse configuration) {
+        try {
+            return timConfigurationService.updateTimConfiguration(configuration)
+                    .map(updatedConfig -> ResponseEntity.ok(updatedConfig))
+                    .onErrorResume(throwable -> {
+                        log.error("Error updating TIM configuration", throwable);
+                        return Mono.error(new RuntimeException(
+                                "Failed to update TIM configuration: " + throwable.getMessage()));
+                    });
+        } catch (Exception e) {
+            log.error("Unexpected error in updateTimConfiguration", e);
+            return Mono.error(new RuntimeException("An unexpected error occurred: " + e.getMessage()));
+        }
+    }
+
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
     @GetMapping(value = "/icons/{version}", produces = "application/gzip")
     @Operation(summary = "Download TIM icons TAR.GZ", description = "Downloads a TAR.GZ file containing all TIM icons for the specified version. "
