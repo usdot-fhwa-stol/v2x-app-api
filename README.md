@@ -14,6 +14,19 @@ The V2X App API facilitates:
 
 ## Architecture
 
+![V2X App API architecture diagram](./docs/v2x-api-diagram.png)
+
+The diagram above shows how the services in this repository interact with each other and with external systems:
+
+- The **V2x Mobile App** authenticates against **Keycloak** (via the **V2x App API**), requests/validates its ETX certificate and MQTT URL, and pulls TIM mappings/icons and API secrets from the **V2x App API**. It publishes BSM/PSM messages and subscribes to BSM/PSM/TIM messages directly on the **Verizon MEC MQTT Server**.
+- The **V2x App API** authenticates requests through **Keycloak** (backed by **PostgreSQL** for user data) and persists registration logs, geofence deployments, and TIM configuration in **PostgreSQL**. It also retrieves certificates and MQTT URLs from the **Verizon ETX Registration API** on behalf of clients.
+- **[jpo-mec-deposit](https://github.com/usdot-jpo-ode/jpo-mec-deposit)** (external service with a protobuf consumer) requests/validates its own ETX certificate and MQTT URL from the **V2x App API**, consumes `GeoHash Routed Message` protobuf messages published by the **kafka-producer** ("TIM Kafka publisher" in the diagram), and publishes the resulting TIM messages to the **Verizon MEC MQTT Server**.
+- **`kafka-producer`** (the "TIM Kafka publisher") pulls active TIM deployment configs (geofence → geohash → payload) from **PostgreSQL** — populated by the **V2x App API** when TIMs are deposited in `GEOFENCE_MQTT` mode — and publishes them as `GeoHashRoutedMsg` protobuf messages to Kafka on a scheduled interval. It reacts to `LISTEN/NOTIFY` on `table_updates` so newly deposited/expired geofences are picked up without polling the database directly on every publish cycle.
+
+In short: `kafka-producer` decouples geofence-based TIM distribution from the synchronous `ETX_CONFIGURATION_API` deposit path — the `V2x App API` writes deployments to Postgres, and `kafka-producer` + [jpo-mec-deposit](https://github.com/usdot-jpo-ode/jpo-mec-deposit) handle getting the resulting TIM out to vehicles over MQTT, independently and at a configurable cadence.
+
+See the [`jpo-mec-deposit` README](https://github.com/usdot-jpo-ode/jpo-mec-deposit#v2x-app-api-integration) for its side of this integration, including its GeoHash MQTT Publisher that consumes the `GeoHashRoutedMsg` messages this repo's `kafka-producer` publishes.
+
 The repository consists of four main services:
 
 1. **v2x-app-api** (Port 8080): Spring Boot REST API
