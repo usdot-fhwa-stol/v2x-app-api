@@ -1,0 +1,31 @@
+FROM gradle:8.13.0-jdk23 as builder
+
+WORKDIR /home/app
+
+# Copy kafka-producer files
+COPY ./kafka-producer/build.gradle . 
+COPY ./kafka-producer/settings.gradle .
+COPY ./kafka-producer/src ./src
+
+# Build the application
+RUN gradle build -x test
+
+# Create a new stage for runtime
+FROM eclipse-temurin:23-jdk-noble
+
+WORKDIR /home/app
+
+# Copy the built application and dependencies
+COPY --from=builder /home/app/build/libs/*.jar ./app.jar
+COPY --from=builder /home/app/src/main/resources/application.yaml ./
+
+ENTRYPOINT ["java", \
+    "-Djava.rmi.server.hostname=$DOCKER_HOST_IP", \
+    "-Dcom.sun.management.jmxremote.port=9090", \
+    "-Dcom.sun.management.jmxremote.rmi.port=9090", \
+    "-Dcom.sun.management.jmxremote", \
+    "-Dcom.sun.management.jmxremote.local.only=true", \
+    "-Dcom.sun.management.jmxremote.authenticate=false", \
+    "-Dcom.sun.management.jmxremote.ssl=false", \
+    "-jar", \
+    "/home/app/app.jar"]

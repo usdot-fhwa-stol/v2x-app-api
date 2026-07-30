@@ -29,3 +29,15 @@ jobs:
           java-version: '22'
           cache: 'gradle'
       - run: cd ./v2x-app-api && ./gradlew build --no-daemon
+
+  kafka-producer-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '23'
+          cache: 'gradle'
+          cache-dependency-path: kafka-producer/**/build.gradle
+      - run: cd ./kafka-producer && ./gradlew build --no-daemon
