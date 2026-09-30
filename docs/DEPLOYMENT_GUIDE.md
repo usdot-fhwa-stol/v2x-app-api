@@ -39,12 +39,26 @@ This guide provides step-by-step instructions for deploying the V2X App API usin
    ```
    KEYCLOAK_ADMIN=admin
    KEYCLOAK_ADMIN_PASSWORD=<secure-password>
-   KEYCLOAK_ENDPOINT=http://<host-ip>:8084
+   KEYCLOAK_ENDPOINT=http://keycloak:8080
    KEYCLOAK_REALM=v2x-app
    KEYCLOAK_CLIENT_NAME=v2x-app-api
    KEYCLOAK_CLIENT_SECRET=<generate-32-character-secret>
    ```
-   > **Note:** Generate a secure 32-character string for `KEYCLOAK_CLIENT_SECRET` using a password generator.
+   > **Note:** The sample administrator password `change_me_123` and client secret
+   > `change_this_for_production_use` are retained for local development. Replace both
+   > with independent, securely generated values before production use.
+
+   `KEYCLOAK_ENDPOINT` is the single URL for token requests, JWKS fetching, and JWT
+   issuer validation. The Compose default uses the `keycloak` service DNS name and
+   container port `8080`. Compose configures `KC_HOSTNAME` to the same URL so tokens
+   requested through either the API or Keycloak's published port share one issuer.
+   Obtain fresh tokens after changing this URL.
+
+   Docker-only DNS is unavailable to host/IDE clients and browsers. For host/IDE
+   development, set `KEYCLOAK_ENDPOINT=http://localhost:8084` before starting Keycloak.
+   For browser-based administration with a containerized API, or HTTPS deployments,
+   use a full URL reachable from both the API container and external clients, such
+   as `https://auth.example.com`. Recreate services after changing environment values.
 
    **ETX Configuration:**
    ```
@@ -118,7 +132,8 @@ This guide provides step-by-step instructions for deploying the V2X App API usin
        "password": "12345"
      }'
    ```
-   > **Note:** Default users are for development only. Configure production users in Keycloak.
+   > **Note:** This example uses the seeded development account. In production, use an
+   > individually provisioned account after completing the checklist below.
 
 2. Test authenticated endpoint:
    ```bash
@@ -253,7 +268,7 @@ Ensure these ports are available and not blocked by firewall rules.
    - Use strong, unique passwords for all services
    - Generate secure `KEYCLOAK_CLIENT_SECRET` (32 characters)
    - Generate secure `KEYCLOAK_ADMIN_PASSWORD` (32 characters)
-   - Configure production users in Keycloak (remove default users)
+   - Complete the [production credential checklist](#production-credential-checklist)
    - Follow Keycloak's guidance for [deploying in production](https://www.keycloak.org/server/configuration-production)
 
 2. **Restart Policy:**
@@ -274,6 +289,128 @@ Ensure these ports are available and not blocked by firewall rules.
 6. **Network:**
    - Configure firewall rules for [required ports](#port-configuration)
    - Use reverse proxy (nginx/traefik) for HTTPS termination
+
+## Keycloak Key Security and Recovery
+
+The realm template preserves generated-provider settings but contains no RSA private
+keys/certificates, AES/HMAC secrets, or exported key identifiers. A fresh import
+generates unique material and stores realm state in PostgreSQL. The Keycloak container
+does not mount a persistent volume over its import directory, so a rebuilt image uses
+the updated template. PostgreSQL data remains persistent.
+
+**Existing realms need explicit recovery.** Keycloak skips startup imports when a realm
+already exists. Updating the source, rebuilding, restarting, or changing the client
+secret does not replace its signing keys. See
+[Keycloak import behavior](https://www.keycloak.org/server/importExport).
+
+### Production Credential Checklist
+
+Before making the API or Keycloak publicly reachable:
+
+1. Replace `KEYCLOAK_ADMIN_PASSWORD=change_me_123` with a unique administrator password.
+   For an existing installation, change the bootstrap administrator's password in the
+   **master** realm as well; changing the environment variable does not reset an
+   existing administrator account.
+2. Replace `KEYCLOAK_CLIENT_SECRET=change_this_for_production_use` with a unique secret.
+   For an existing realm, regenerate the `v2x-app-api` client's secret in Keycloak and
+   update the API environment to match. A new environment value alone does not modify
+   an already imported client. Restart the API after updating it.
+3. In **v2x-app**, create individually credentialed users and assign only the required
+   `ROLE_USER`, `ROLE_DEPOSITOR`, or `ROLE_ADMIN` roles. These are application users,
+   separate from the Keycloak administrator in the master realm.
+4. Delete the seeded **user**, **depositor**, and **admin** accounts from **v2x-app**.
+   Revoke their online and offline sessions before deletion. Verify all three accounts
+   can no longer obtain tokens with the documented password `12345`.
+5. Confirm replacement accounts can authenticate and access only their intended APIs.
+   If the realm used the earlier key-bearing template, also complete recovery below.
+
+### Recover an Existing Realm Without Deleting PostgreSQL Data
+
+Use this procedure for every environment bootstrapped from the earlier template.
+Development environments may keep their seeded users and local defaults.
+
+1. Back up PostgreSQL securely and record the existing key-provider IDs and public
+   key IDs. Treat backups containing the old key material as sensitive and unsuitable
+   for restoring a recovered realm without repeating this procedure.
+2. Stop **every API instance** and block external access during recovery. For the local
+   Compose stack:
+
+   ```bash
+   docker compose stop v2x-app-api
+   docker compose build keycloak
+   docker compose up -d --no-deps --force-recreate keycloak
+   ```
+
+   Preserve the PostgreSQL service and volume. Do **not** use `docker compose down -v`,
+   delete the database, or overwrite the entire realm.
+3. In the Keycloak admin console, select **v2x-app → Realm settings → Keys → Providers**.
+   Create fresh providers without supplying any existing key material, using priority
+   `200` to supersede the existing priority `100`:
+
+   | Provider | Settings |
+   |----------|----------|
+   | `rsa-generated` | Signing (`SIG`), `RS256` |
+   | `rsa-enc-generated` | Encryption (`ENC`), `RSA-OAEP` |
+   | `hmac-generated` | `HS512` |
+   | `aes-generated` | AES; retain the existing key-size setting/default |
+
+   Give the replacements distinct names and confirm all four generated keys appear.
+4. Delete the **old** providers identified in step 1, including any historical providers
+   carrying the exposed material. Making the old signing key passive or lowering its
+   priority is insufficient: passive keys can still verify forged tokens. See
+   [Keycloak key management](https://www.keycloak.org/docs/latest/server_admin/index.html#_keys).
+5. Sign out all realm sessions. Separately revoke offline grants/sessions for affected
+   users through the user **Consents/Offline access** controls (or the corresponding
+   Admin REST API); ordinary logout alone does not revoke offline access.
+6. Fetch the realm's public JWKS at
+   `<KEYCLOAK_ENDPOINT>/realms/v2x-app/protocol/openid-connect/certs`. Verify that old
+   key IDs are absent and compare RSA public-key thumbprints with
+   [`scripts/tests/compromised-keycloak-public-keys.json`](../scripts/tests/compromised-keycloak-public-keys.json).
+   That fixture contains SHA-256 JWK thumbprints (RFC 7638), not private keys. From the
+   repository root, this check prints only public fingerprints:
+
+   ```bash
+   KEYCLOAK_ENDPOINT=https://auth.example.com python3 - <<'PY'
+   import json, os
+   from pathlib import Path
+   from scripts.test_keycloak_import import request, thumbprints
+   live = thumbprints(request(os.environ['KEYCLOAK_ENDPOINT'].rstrip('/'),
+                            '/realms/v2x-app/protocol/openid-connect/certs'))
+   exposed = {k['sha256_jwk_thumbprint'] for k in json.loads(
+       Path('scripts/tests/compromised-keycloak-public-keys.json').read_text())}
+   print('Current public RSA thumbprints:', ', '.join(sorted(live)))
+   if live & exposed:
+       raise SystemExit('FAIL: exposed RSA key is still published')
+   print('PASS: exposed RSA keys are absent')
+   PY
+   ```
+
+   Substitute your actual endpoint and realm if customized. Also verify the AES and
+   HMAC provider IDs/key IDs differ from those recorded before recovery.
+7. Start or recreate every API instance so its in-memory JWKS cache is cleared:
+
+   ```bash
+   docker compose up -d --no-deps --force-recreate v2x-app-api
+   ```
+
+   Resource servers cache verification keys, so removing a key from Keycloak does not
+   guarantee immediate rejection by an already running API. See
+   [Spring JWKS caching](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html).
+8. With external access still blocked, submit an access token obtained before rotation
+   to a protected, read-only endpoint and verify HTTP **401**. Obtain a fresh token and
+   confirm normal access. Do not print tokens or use real integration credentials in
+   regression tests. Reopen access only after every API instance passes.
+9. After verification, retire obsolete Keycloak images and the old, unused Keycloak
+   import volume by their exact recorded names. Do not remove `postgres_data` or use
+   broad Docker pruning. Never roll back to an image, import file, or database backup
+   that restores the exposed keys. Historical Git copies remain compromised.
+
+The CI import test uses disposable services to verify independent installations,
+restart persistence, retained development accounts, and this key-rotation sequence:
+
+```bash
+python3 scripts/test_keycloak_import.py
+```
 
 ## Access Points
 
