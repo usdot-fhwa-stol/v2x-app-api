@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import secrets
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -100,6 +101,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", help="Use an already built shipped Keycloak image")
     args = parser.parse_args()
+    print("[SCOPE] This is an isolated image/import test, not a scan of your active deployment.", flush=True)
+    print("[SCOPE] It creates two temporary Keycloak/PostgreSQL installations and rotates only their test keys.", flush=True)
     prefix = "v2x-key-test-" + uuid.uuid4().hex[:10]
     image = args.image or prefix + ":test"
     containers = []
@@ -107,18 +110,20 @@ def main():
     built_image = False
     password = secrets.token_urlsafe(24)
     client_secret = "change_this_for_production_use"
-    historical = {key["sha256_jwk_thumbprint"] for key in
-                  json.loads((ROOT / "scripts/tests/compromised-keycloak-public-keys.json").read_text())}
     try:
+        historical = {key["sha256_jwk_thumbprint"] for key in
+                      json.loads((ROOT / "scripts/tests/compromised-keycloak-public-keys.json").read_text())}
         if not args.image:
-            print("Building shipped Keycloak image", flush=True)
+            print("[INFO] Building the shipped Keycloak image for testing.", flush=True)
             docker("build", "--tag", image, str(ROOT / "resources/keycloak"))
             built_image = True
+        else:
+            print("[INFO] Testing the supplied image in temporary installations.", flush=True)
         docker("network", "create", prefix)
         network_created = True
         installations = []
         for index in range(2):
-            print(f"Starting isolated installation {index + 1}", flush=True)
+            print(f"[INFO] Starting temporary installation {index + 1}/2 with a fresh database.", flush=True)
             pg = f"{prefix}-pg-{index}"
             kc = f"{prefix}-kc-{index}"
             containers.append(pg)
@@ -148,6 +153,7 @@ def main():
             fingerprints = thumbprints(jwks)
             assert len(fingerprints) == 2, "Expected generated RSA signing and encryption keys"
             assert not fingerprints & historical, "An exposed historical RSA key was imported"
+            print(f"[PASS] Installation {index + 1}: neither known exposed RSA key is present in its public JWKS.", flush=True)
             for username, role in (("user", "ROLE_USER"), ("depositor", "ROLE_DEPOSITOR"), ("admin", "ROLE_ADMIN")):
                 token = request(base, "/realms/v2x-app/protocol/openid-connect/token", form={
                     "grant_type": "password", "client_id": "v2x-app-api", "client_secret": client_secret,
@@ -161,11 +167,14 @@ def main():
             keys = request(base, "/admin/realms/v2x-app/keys", token=admin_token)
             assert {"RS256", "RSA-OAEP", "HS512", "AES"} <= {k["algorithm"] for k in keys["keys"]}, \
                 "One of the four providers did not generate keys"
+            print(f"[PASS] Installation {index + 1}: all four key providers generated keys; "
+                  "the three development users authenticate with their expected roles.", flush=True)
             installations.append((kc, base, jwks, token, keys))
         assert not thumbprints(installations[0][2]) & thumbprints(installations[1][2]), "Installations share RSA keys"
-        print("Independent keys and seeded-user authentication verified", flush=True)
+        print("[PASS] The two fresh installations have independent RSA signing and encryption keys.", flush=True)
 
         kc, base, before, old_token, original_keys = installations[0]
+        print("[INFO] Restarting temporary installation 1 without changing its database.", flush=True)
         docker("restart", kc)
         # Docker may allocate a different host port for an ephemeral binding on restart.
         port = docker("port", kc, "8080/tcp").rsplit(":", 1)[1]
@@ -174,8 +183,9 @@ def main():
         after_restart = request(base, "/realms/v2x-app/protocol/openid-connect/certs")
         assert thumbprints(before) == thumbprints(after_restart), "Database-backed keys changed on restart"
         assert verifies(old_token, after_restart), "Existing token failed after a normal restart"
-        print("Database-backed key persistence verified", flush=True)
+        print("[PASS] Restart preserved its RSA keys, and its existing test token still verifies.", flush=True)
 
+        print("[INFO] Deliberately rotating all four providers in temporary installation 1.", flush=True)
         admin_token = request(base, "/realms/master/protocol/openid-connect/token", form={
             "grant_type": "password", "client_id": "admin-cli",
             "username": "bootstrap-admin", "password": password})["access_token"]
@@ -210,15 +220,32 @@ def main():
             "grant_type": "password", "client_id": "v2x-app-api", "client_secret": client_secret,
             "username": "admin", "password": "12345"})["access_token"]
         assert verifies(new_token, rotated), "New token fails after rotation"
-        print("Four-provider rotation and old-token rejection verified", flush=True)
+        print("[PASS] All four old test keys were removed and replaced.", flush=True)
+        print("[PASS] The pre-rotation test token no longer verifies against current JWKS; a fresh token does.", flush=True)
+    except AssertionError as error:
+        print(f"[FAIL] Isolated test check failed: {error}", file=sys.stderr, flush=True)
+        print("[RESULT] FAIL: inspect the tested image/template. Your active deployment was not scanned.",
+              file=sys.stderr, flush=True)
+        return 1
+    except Exception as error:
+        print(f"[ERROR] Isolated test could not complete: {type(error).__name__}: {error}",
+              file=sys.stderr, flush=True)
+        print("[RESULT] INCOMPLETE: this execution error is not a vulnerability finding. "
+              "Your active deployment was not scanned.", file=sys.stderr, flush=True)
+        return 1
     finally:
+        print("[INFO] Cleaning up temporary test resources only.", flush=True)
         for container in reversed(containers):
             subprocess.run(["docker", "rm", "--force", "--volumes", container], capture_output=True)
         if network_created:
             subprocess.run(["docker", "network", "rm", prefix], capture_output=True)
         if built_image:
             subprocess.run(["docker", "image", "rm", image], capture_output=True)
+    print("[RESULT] PASS: all isolated image/import/key-rotation checks passed.", flush=True)
+    print("[SCOPE] Your active deployment was not scanned or modified. Assess existing deployments "
+          "separately using the documented key audit/recovery procedure.", flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

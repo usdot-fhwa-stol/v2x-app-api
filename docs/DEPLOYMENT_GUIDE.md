@@ -412,6 +412,13 @@ restart persistence, retained development accounts, and this key-rotation sequen
 python3 scripts/test_keycloak_import.py
 ```
 
+`[PASS]` messages describe successful checks in the temporary installations. The final
+`[RESULT] PASS` means the tested image generates independent keys, preserves them across
+restart, and supports rotation that removes old keys from verification. It is not a
+security assessment of an existing deployment. `[FAIL]` identifies a failed test check;
+`[ERROR]` / `[RESULT] INCOMPLETE` means the test could not finish, for example because
+Docker or Keycloak failed to start. Both failure cases exit with a nonzero status.
+
 ## Access Points
 
 After successful deployment:
