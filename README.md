@@ -42,6 +42,20 @@ The repository consists of four main services:
   - Located in `j2735-ffm-java/lib/`
   - For local development, copy to `/usr/lib/` (Linux) or system PATH (Windows)
 
+## Check an Existing Keycloak Deployment
+
+Check whether the realm still publishes either RSA key exposed by F-01 / CWE-321:
+
+```bash
+python3 scripts/check_keycloak_deployment.py --keycloak-url http://localhost:8084
+```
+
+Use a reachable Keycloak base URL and `--realm` for a custom realm. This read-only
+check exits `1` when a known exposed key is found, `0` when both are absent from
+public JWKS, and `2` when the check cannot complete. It does not assess AES/HMAC
+secrets or API cached keys. See the [deployment audit and recovery guide](docs/DEPLOYMENT_GUIDE.md#audit-an-existing-deployment)
+for result meanings and the full recovery procedure.
+
 ## Configuration
 
 ### Environment Setup
@@ -59,7 +73,7 @@ The repository consists of four main services:
    - `RESTART_POLICY`: Docker container restart policy (default: `"no"`). See [Docker documentation](https://docs.docker.com/engine/containers/start-containers-automatically/) for options.
 
    **Keycloak Configuration:**
-   - `KEYCLOAK_ENDPOINT`: Keycloak server URL (default: `http://${DOCKER_HOST_IP}:8084`)
+   - `KEYCLOAK_ENDPOINT`: Keycloak URL used for token requests, JWKS fetching, and issuer validation (Compose sample default: `http://keycloak:8080`). For host/IDE runs, use `http://localhost:8084`; for external or HTTPS deployments, use a URL reachable from the API and its clients.
    - `KEYCLOAK_REALM`: Realm name (default: `v2x-app`)
    - `KEYCLOAK_CLIENT_NAME`: Client ID (default: `v2x-app-api`)
    - `KEYCLOAK_CLIENT_SECRET`: Client secret (generate a secure 32-character string)
@@ -234,6 +248,10 @@ docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml logs -f 
    ```
 
 2. **Start PostgreSQL and Keycloak**:
+   Set `KEYCLOAK_ENDPOINT=http://localhost:8084` in `.env` before starting Keycloak
+   when running the API on the host/IDE. The sample's `keycloak` hostname resolves
+   only inside the Compose network. Recreate Keycloak if switching endpoint URLs.
+
    ```bash
    COMPOSE_PROFILES=keycloak docker compose up -d
    ```
@@ -309,11 +327,30 @@ docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml logs -f 
 
 ### Default Users (Local Development Only)
 
+The realm intentionally seeds the following accounts for local development. The sample
+Keycloak administrator password (`change_me_123`) and client secret
+(`change_this_for_production_use`) are also development defaults. Before exposing a
+production deployment, replace those defaults, create individually credentialed users,
+and delete all three seeded accounts. Follow the
+[production checklist and key recovery procedure](docs/DEPLOYMENT_GUIDE.md#keycloak-key-security-and-recovery).
+
 | Username | Password | Role |
 |----------|----------|------|
 | `user` | `12345` | ROLE_USER |
 | `depositor` | `12345` | ROLE_DEPOSITOR |
 | `admin` | `12345` | ROLE_ADMIN |
+
+### Realm Keys
+
+The committed realm template contains key-provider settings, without private keys,
+certificates, symmetric secrets, or exported key identifiers. Keycloak generates fresh
+key material during import and persists it in PostgreSQL. Seeded users and local
+credential defaults remain available.
+
+Rebuilding the image does **not** rotate keys in an existing realm. If an environment
+was initialized from an earlier template, follow the
+[key recovery procedure](docs/DEPLOYMENT_GUIDE.md#keycloak-key-security-and-recovery).
+Previously committed keys must never be reused.
 
 ### Obtaining a Token
 

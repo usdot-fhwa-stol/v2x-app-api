@@ -1,0 +1,10 @@
+[
+  {
+    "provider": "rsa-generated",
+    "sha256_jwk_thumbprint": "D5rClI5eQWnrkeWsYFN0-XxneZ0F5s1AiHn2XGESqtU"
+  },
+  {
+    "provider": "rsa-enc-generated",
+    "sha256_jwk_thumbprint": "x7CMHu1loS4tK7UEZ4Q9TFLm5dwObJukNScDQr79NTw"
+  }
+]
