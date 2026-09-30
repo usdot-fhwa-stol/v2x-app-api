@@ -362,31 +362,20 @@ Development environments may keep their seeded users and local defaults.
 5. Sign out all realm sessions. Separately revoke offline grants/sessions for affected
    users through the user **Consents/Offline access** controls (or the corresponding
    Admin REST API); ordinary logout alone does not revoke offline access.
-6. Fetch the realm's public JWKS at
-   `<KEYCLOAK_ENDPOINT>/realms/v2x-app/protocol/openid-connect/certs`. Verify that old
-   key IDs are absent and compare RSA public-key thumbprints with
-   [`scripts/tests/compromised-keycloak-public-keys.json`](../scripts/tests/compromised-keycloak-public-keys.json).
-   That fixture contains SHA-256 JWK thumbprints (RFC 7638), not private keys. From the
-   repository root, this check prints only public fingerprints:
+6. Verify that old key IDs are absent from the realm's public JWKS and run the
+   deployment audit from the repository root:
 
    ```bash
-   KEYCLOAK_ENDPOINT=https://auth.example.com python3 - <<'PY'
-   import json, os
-   from pathlib import Path
-   from scripts.test_keycloak_import import request, thumbprints
-   live = thumbprints(request(os.environ['KEYCLOAK_ENDPOINT'].rstrip('/'),
-                            '/realms/v2x-app/protocol/openid-connect/certs'))
-   exposed = {k['sha256_jwk_thumbprint'] for k in json.loads(
-       Path('scripts/tests/compromised-keycloak-public-keys.json').read_text())}
-   print('Current public RSA thumbprints:', ', '.join(sorted(live)))
-   if live & exposed:
-       raise SystemExit('FAIL: exposed RSA key is still published')
-   print('PASS: exposed RSA keys are absent')
-   PY
+   python3 scripts/check_keycloak_deployment.py --keycloak-url https://auth.example.com
    ```
 
-   Substitute your actual endpoint and realm if customized. Also verify the AES and
-   HMAC provider IDs/key IDs differ from those recorded before recovery.
+   It compares published RSA keys with the two known exposed public-key fingerprints
+   in [`scripts/compromised-keycloak-public-keys.json`](../scripts/compromised-keycloak-public-keys.json).
+   These are SHA-256 JWK thumbprints (RFC 7638), not private keys. Use a URL reachable
+   from the machine running the script and `--realm` if the realm name is customized.
+   Require `KNOWN RSA KEYS ABSENT` before continuing. Also verify the AES and HMAC
+   provider IDs/key IDs differ from those recorded before recovery; public JWKS does
+   not expose these symmetric secrets or disabled providers.
 7. Start or recreate every API instance so its in-memory JWKS cache is cleared:
 
    ```bash
@@ -405,19 +394,42 @@ Development environments may keep their seeded users and local defaults.
    broad Docker pruning. Never roll back to an image, import file, or database backup
    that restores the exposed keys. Historical Git copies remain compromised.
 
-The CI import test uses disposable services to verify independent installations,
-restart persistence, retained development accounts, and this key-rotation sequence:
+### Audit an Existing Deployment
+
+Use the read-only deployment audit to check whether an existing realm still publishes
+an RSA key exposed by F-01 / CWE-321. It requires Python 3 and public JWKS access;
+it does not require Docker or administrator credentials and does not change the
+installation, issue tokens, or rotate keys. For a Compose deployment, run on the host:
 
 ```bash
-python3 scripts/test_keycloak_import.py
+python3 scripts/check_keycloak_deployment.py --keycloak-url http://localhost:8084
 ```
 
-`[PASS]` messages describe successful checks in the temporary installations. The final
-`[RESULT] PASS` means the tested image generates independent keys, preserves them across
-restart, and supports rotation that removes old keys from verification. It is not a
-security assessment of an existing deployment. `[FAIL]` identifies a failed test check;
-`[ERROR]` / `[RESULT] INCOMPLETE` means the test could not finish, for example because
-Docker or Keycloak failed to start. Both failure cases exit with a nonzero status.
+For a remote deployment, supply its Keycloak base URL (including `/auth` if used):
+
+```bash
+python3 scripts/check_keycloak_deployment.py --keycloak-url https://auth.example.com --realm v2x-app
+```
+
+The URL must be reachable from where the script runs. The Compose DNS name
+`http://keycloak:8080` normally works only inside the Docker network. HTTPS certificate
+verification is enabled; redirects are rejected, so supply the final base URL.
+
+| Result | Exit code | Meaning |
+|--------|-----------|---------|
+| `VULNERABLE` | `1` | At least one known exposed RSA key is still published. Follow the recovery procedure above. |
+| `KNOWN RSA KEYS ABSENT` | `0` | Neither known exposed RSA key appears in the selected realm's current public JWKS. |
+| `INCOMPLETE` | `2` | No conclusion could be reached, for example due to connection, HTTP, JSON, or key-data errors. |
+
+The comparison uses public-key material rather than key IDs, so renaming a key or
+leaving it published as a passive key does not hide it. An absent-key result is scoped
+to published RSA keys: it does **not** assess AES/HMAC secrets, disabled providers,
+API verification-key caches, credentials, session revocation, or production readiness.
+Realms imported from the old template still require the full recovery procedure and
+old-token rejection checks. Audit each independently deployed realm separately.
+
+The separate `scripts/check_keycloak_realm.py` guard checks repository templates;
+it does not audit deployed database state.
 
 ## Access Points
 

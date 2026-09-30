@@ -42,6 +42,20 @@ The repository consists of four main services:
   - Located in `j2735-ffm-java/lib/`
   - For local development, copy to `/usr/lib/` (Linux) or system PATH (Windows)
 
+## Check an Existing Keycloak Deployment
+
+Check whether the realm still publishes either RSA key exposed by F-01 / CWE-321:
+
+```bash
+python3 scripts/check_keycloak_deployment.py --keycloak-url http://localhost:8084
+```
+
+Use a reachable Keycloak base URL and `--realm` for a custom realm. This read-only
+check exits `1` when a known exposed key is found, `0` when both are absent from
+public JWKS, and `2` when the check cannot complete. It does not assess AES/HMAC
+secrets or API cached keys. See the [deployment audit and recovery guide](docs/DEPLOYMENT_GUIDE.md#audit-an-existing-deployment)
+for result meanings and the full recovery procedure.
+
 ## Configuration
 
 ### Environment Setup
