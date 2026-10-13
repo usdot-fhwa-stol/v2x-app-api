@@ -47,6 +47,14 @@ public class GeofenceProperties {
          * representative per 3×3 block. Values of {@code 0} or less always thin.
          */
         private int representativeFilterThreshold = 20;
+        /**
+         * Maximum number of 3×3-representative geohashes an override geofence may
+         * cover when it is kept. If the override exceeds this count, the API
+         * generates a tighter geofence from the TIM/MAP message instead. Values of
+         * {@code 0} or less always generate from the message. MQTT deposits that
+         * keep the override persist every intersecting cell, not these representatives.
+         */
+        private int overrideGeohashThreshold = 50;
     }
 
     @Data
