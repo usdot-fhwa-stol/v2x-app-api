@@ -127,6 +127,134 @@ class GeohashCoverageRegressionTest {
     }
 
     @Test
+    void occupiedInteriorCellCanBeCoveredByAnAlreadyCoveredNeighbor() {
+        properties.getLimits().setAllowOverlappingGeohashes(false);
+        properties.getLimits().setRepresentativeFilterThreshold(20);
+        double step = 180.0 / (1L << 17);
+        double lat = -90.0 + (96234 + 0.5) * step;
+        double lon = -180.0 + (70002 + 0.5) * step;
+        double[][] corridor = thinGridCorridor(lon, lat, step);
+        String occupied = GeoHash.withCharacterPrecision(lat, lon + 2 * step, PRECISION).toBase32();
+
+        List<String> selected = geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                polygonFeatureCollection(corridor), PRECISION, Set.of(occupied));
+
+        assertFalse(selected.contains(occupied));
+        assertCoverage(selected, extractAll(corridor, PRECISION), PRECISION);
+
+        properties.getLimits().setMaxGeohashes(selected.size() - 1);
+        assertThrows(GeofenceTooLargeException.class,
+                () -> geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                        polygonFeatureCollection(corridor), PRECISION, Set.of(occupied)));
+    }
+
+    @Test
+    void saturatedInteriorCellsRejectRatherThanReturnPartialCoverage() {
+        properties.getLimits().setAllowOverlappingGeohashes(false);
+        properties.getLimits().setRepresentativeFilterThreshold(20);
+        double step = 180.0 / (1L << 17);
+        double lat = -90.0 + (96234 + 0.5) * step;
+        double lon = -180.0 + (70002 + 0.5) * step;
+        Set<String> occupied = new HashSet<>();
+        for (int offset : List.of(1, 2, 3)) {
+            occupied.add(GeoHash.withCharacterPrecision(lat, lon + offset * step, PRECISION).toBase32());
+        }
+
+        RuntimeException exception = assertThrows(RuntimeException.class,
+                () -> geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                        polygonFeatureCollection(thinGridCorridor(lon, lat, step)), PRECISION, occupied));
+
+        assertTrue(exception instanceof NoAvailableGeohashException
+                || exception.getCause() instanceof NoAvailableGeohashException);
+    }
+
+    @Test
+    void gridAlignedPolygonIncludesEveryTouchingCellAndAvailableBoundaryAlternatives() {
+        BoundingBox bounds = GeoHash.fromGeohashString("dpkrgdd").getBoundingBox();
+        GeofenceFeatureCollection polygon = polygonFeatureCollection(ringFromBounds(bounds));
+        Set<String> expected = touchingGridCells(bounds);
+        assertEquals(9, expected.size());
+        assertEquals(expected, new HashSet<>(extractAll(polygon, PRECISION)));
+
+        Set<String> occupied = Set.of("dpkrgdg", "dpkrgdf", "dpkrgde", "dpkrgdd");
+        properties.getLimits().setAllowOverlappingGeohashes(false);
+        expected.removeAll(occupied);
+        assertEquals(expected, new HashSet<>(geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                polygon, PRECISION, occupied, false)));
+    }
+
+    @Test
+    void touchingBoundaryCellsAreReservedBeforeScanning() {
+        double[][] ring = ringFromBounds(GeoHash.fromGeohashString("dpkrgdd").getBoundingBox());
+        properties.getLimits().setMaxCandidateCells(9);
+        assertEquals(9, assertDoesNotThrow(() -> extractAll(ring, PRECISION)).size());
+
+        properties.getLimits().setMaxCandidateCells(8);
+        GeofenceTooLargeException exception = assertThrows(GeofenceTooLargeException.class,
+                () -> extractAll(ring, PRECISION));
+        assertTrue(exception.getMessage().contains("GEOFENCE_TOO_LARGE"));
+    }
+
+    @Test
+    void boundaryScanAndBudgetAreClippedAtWorldEdges() {
+        for (double[] point : new double[][] {
+                {-179.9999, 10.0}, {10.0, 89.9999}, {-179.9999, -89.9999}, {179.9999, 89.9999}
+        }) {
+            BoundingBox bounds = GeoHash.withCharacterPrecision(point[1], point[0], PRECISION).getBoundingBox();
+            Set<String> expected = touchingGridCells(bounds);
+            properties.getLimits().setMaxCandidateCells(expected.size());
+
+            assertEquals(expected, new HashSet<>(assertDoesNotThrow(
+                    () -> extractAll(ringFromBounds(bounds), PRECISION))));
+        }
+    }
+
+    @Test
+    void smallScanAcrossEquatorAndPrimeMeridianStaysWithinItsCellBudget() {
+        BoundingBox bounds = GeoHash.withCharacterPrecision(0.0, 0.0, PRECISION).getBoundingBox();
+        Set<String> expected = touchingGridCells(bounds);
+        properties.getLimits().setMaxCandidateCells(expected.size());
+
+        assertEquals(expected, new HashSet<>(extractAll(ringFromBounds(bounds), PRECISION)));
+    }
+
+    private static double[][] thinGridCorridor(double lon, double lat, double step) {
+        return new double[][] {
+                {lon, lat - step * 0.1}, {lon + 24 * step, lat - step * 0.1},
+                {lon + 24 * step, lat + step * 0.1}, {lon, lat + step * 0.1},
+                {lon, lat - step * 0.1}
+        };
+    }
+
+    private static double[][] ringFromBounds(BoundingBox bounds) {
+        return new double[][] {
+                {bounds.getWestLongitude(), bounds.getSouthLatitude()},
+                {bounds.getEastLongitude(), bounds.getSouthLatitude()},
+                {bounds.getEastLongitude(), bounds.getNorthLatitude()},
+                {bounds.getWestLongitude(), bounds.getNorthLatitude()},
+                {bounds.getWestLongitude(), bounds.getSouthLatitude()}
+        };
+    }
+
+    private static Set<String> touchingGridCells(BoundingBox bounds) {
+        Set<String> cells = new HashSet<>();
+        double latStep = bounds.getNorthLatitude() - bounds.getSouthLatitude();
+        double lonStep = bounds.getEastLongitude() - bounds.getWestLongitude();
+        double latCenter = (bounds.getNorthLatitude() + bounds.getSouthLatitude()) / 2;
+        double lonCenter = (bounds.getEastLongitude() + bounds.getWestLongitude()) / 2;
+        for (int row = -1; row <= 1; row++) {
+            for (int column = -1; column <= 1; column++) {
+                double lat = latCenter + row * latStep;
+                double lon = lonCenter + column * lonStep;
+                if (lat > -90 && lat < 90 && lon > -180 && lon < 180) {
+                    cells.add(GeoHash.withCharacterPrecision(lat, lon, PRECISION).toBase32());
+                }
+            }
+        }
+        return cells;
+    }
+
+    @Test
     void fragmentedGeometryStopsWhenCoverageFillExceedsSelectedLimit() throws Exception {
         List<String> cornerCells = cellsAtCornersOfOnePrimaryBlock();
         String fragmentedMultiPolygon = new ObjectMapper().writeValueAsString(Map.of(

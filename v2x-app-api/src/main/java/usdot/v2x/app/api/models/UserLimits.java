@@ -9,7 +9,8 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 @Entity
-@Table(name = "user_limits")
+@Table(name = "user_limits", uniqueConstraints = @UniqueConstraint(
+        name = "uk_user_limits_username_vendor", columnNames = { "username", "vendor_id" }))
 @Data
 @EntityListeners(AuditingEntityListener.class)
 public class UserLimits {

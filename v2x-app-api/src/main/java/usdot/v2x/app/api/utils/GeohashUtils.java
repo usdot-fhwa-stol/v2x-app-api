@@ -3,8 +3,6 @@ package usdot.v2x.app.api.utils;
 import ch.hsr.geohash.BoundingBox;
 import ch.hsr.geohash.GeoHash;
 import ch.hsr.geohash.WGS84Point;
-import ch.hsr.geohash.util.BoundingBoxGeoHashIterator;
-import ch.hsr.geohash.util.TwoGeoHashBoundingBox;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import usdot.v2x.app.api.config.GeofenceProperties;
@@ -75,10 +73,6 @@ public class GeohashUtils {
     private final JdbcTemplate jdbcTemplate;
     private final int polygonAnalysisParallelism;
     private final ExecutorService polygonAnalysisExecutor;
-
-    // Cache for step size calculations to avoid repeated calculations
-    private final Map<Integer, Double> latStepCache = new HashMap<>();
-    private final Map<Integer, Double> lonStepCache = new HashMap<>();
 
     public GeohashUtils(ObjectMapper objectMapper, ErrorLoggingService errorLoggingService,
             GeofenceProperties geofenceProperties, JdbcTemplate jdbcTemplate) {
@@ -308,6 +302,19 @@ public class GeohashUtils {
     }
 
     /**
+     * Count the 3×3 representatives an override would deploy, for threshold
+     * checks. Unlike the public extraction overloads, this propagates
+     * {@link NoAvailableGeohashException} and {@link GeofenceTooLargeException}
+     * unchanged, wraps other geometry failures in a {@link RuntimeException}
+     * and does not write to the error log.
+     */
+    public int countRepresentativeGeohashes(
+            GeofenceFeatureCollection geofenceFeatureCollection, int precision) {
+        return extractGeofenceFeatureCollectionInternal(
+                geofenceFeatureCollection, precision, Set.of(), true).size();
+    }
+
+    /**
      * Create JTS Polygon from custom Polygon POJO
      */
     private org.locationtech.jts.geom.Polygon createJtsPolygonFromCustomPolygon(
@@ -514,29 +521,17 @@ public class GeohashUtils {
     }
 
     /**
-     * Calculate latitude step size for geohash grid.
-     * Latitude spans 180° (−90 to +90); with {@code latBits} bits there are
-     * 2^latBits rows, so each row is 180° / 2^latBits wide.
+     * Latitude step for a precision; see {@link GeohashGrid#latStep(int)}.
      */
     private double calculateLatStep(int precision) {
-        return latStepCache.computeIfAbsent(precision, p -> {
-            int bits = p * 5;
-            int latBits = bits / 2;
-            return 180.0 / Math.pow(2, latBits);
-        });
+        return GeohashGrid.latStep(precision);
     }
 
     /**
-     * Calculate longitude step size for geohash grid.
-     * Longitude spans 360° (−180 to +180); with {@code lonBits} bits there are
-     * 2^lonBits columns, so each column is 360° / 2^lonBits wide.
+     * Longitude step for a precision; see {@link GeohashGrid#lonStep(int)}.
      */
     private double calculateLonStep(int precision) {
-        return lonStepCache.computeIfAbsent(precision, p -> {
-            int bits = p * 5;
-            int lonBits = (bits + 1) / 2; // Longitude gets the extra bit for odd total
-            return 360.0 / Math.pow(2, lonBits);
-        });
+        return GeohashGrid.lonStep(precision);
     }
 
     /**
@@ -924,14 +919,18 @@ public class GeohashUtils {
             // Prepare once so the spatial index is built before the per-cell loop.
             PreparedGeometry prepared = PreparedGeometryFactory.prepare(geometry);
 
-            TwoGeoHashBoundingBox geoHashBox = TwoGeoHashBoundingBox.withCharacterPrecision(
-                    scan.boundingBox(), precision);
-            BoundingBoxGeoHashIterator iterator = new BoundingBoxGeoHashIterator(geoHashBox);
-
-            while (iterator.hasNext()) {
-                GeoHash cell = iterator.next();
-                if (geometryIntersectsGeohashCell(prepared, cell)) {
-                    cells.add(cell.toBase32());
+            // Enumerate exactly the row/column range reserved by the budget.
+            // Walking geohash ordinals can traverse enormous gaps outside a
+            // small box, particularly across the equator or prime meridian.
+            GeohashScanBudget.CellRange range = GeohashScanBudget.cellRange(scan.boundingBox(), precision);
+            for (long row = range.southRow(); row <= range.northRow(); row++) {
+                double latitude = (row + 0.5) * range.latitudeStep() - 90.0;
+                for (long column = range.westColumn(); column <= range.eastColumn(); column++) {
+                    double longitude = (column + 0.5) * range.longitudeStep() - 180.0;
+                    GeoHash cell = GeoHash.withCharacterPrecision(latitude, longitude, precision);
+                    if (geometryIntersectsGeohashCell(prepared, cell)) {
+                        cells.add(cell.toBase32());
+                    }
                 }
             }
         } catch (IllegalArgumentException e) {
@@ -950,7 +949,7 @@ public class GeohashUtils {
 
     /**
      * Build a geohash {@link BoundingBox} from a JTS envelope, normalizing
-     * inverted/null bounds and expanding zero-area envelopes so iteration works.
+     * inverted/null bounds and including cells that touch grid-aligned minima.
      */
     private BoundingBox toGeohashBoundingBox(Envelope envelope, int precision) {
         if (envelope == null || envelope.isNull()) {
@@ -985,10 +984,14 @@ public class GeohashUtils {
         if (south == north) {
             south -= latPad;
             north += latPad;
+        } else {
+            south = includeTouchingLowerCell(south, latPad * 2.0, 90.0);
         }
         if (west == east) {
             west -= lonPad;
             east += lonPad;
+        } else {
+            west = includeTouchingLowerCell(west, lonPad * 2.0, 180.0);
         }
 
         south = Math.max(-90.0, south);
@@ -1001,6 +1004,16 @@ public class GeohashUtils {
         }
 
         return new BoundingBox(south, north, west, east);
+    }
+
+    private static double includeTouchingLowerCell(double coordinate, double step, double origin) {
+        double index = (coordinate + origin) / step;
+        if (coordinate > -origin && coordinate < origin && index == Math.rint(index)) {
+            // Use the neighboring cell's center. A one-ULP decrement can round
+            // back onto the boundary when the geohash encoder adds its origin.
+            return coordinate - step / 2.0;
+        }
+        return coordinate;
     }
 
     private Set<String> cellsFromGeometryCentroid(Geometry geometry, int precision) {
@@ -1133,8 +1146,9 @@ public class GeohashUtils {
 
     /**
      * Greedy set cover for any intersecting cell still outside every selected 3×3.
-     * Prefers the available candidate that covers the most remaining holes, then
-     * the one closer to its world-aligned block centre.
+     * Prefers nonadjacent candidates, then the most remaining holes and the
+     * shortest distance to the block centre. Already-covered candidates remain
+     * eligible when occupied cells prevent a nonadjacent selection.
      */
     private void fillCoverageGaps(
             List<String> selected,
@@ -1184,17 +1198,18 @@ public class GeohashUtils {
                 }
             }
 
+            // Only cells that cover at least one hole are eligible, and every key of
+            // coveredCounts is an intersecting cell. Ties break on geohash order so the
+            // choice does not depend on HashMap iteration order.
             String best = null;
             int bestCovered = 0;
             double bestDistance = Double.POSITIVE_INFINITY;
-            for (String candidate : intersectingCells) {
+            boolean bestIsCovered = true;
+            for (Map.Entry<String, Integer> entry : coveredCounts.entrySet()) {
+                String candidate = entry.getKey();
+                int coveredCount = entry.getValue();
                 if (selectedSet.contains(candidate)
-                        || coveredCells.contains(candidate)
                         || !isCellAvailable(candidate, existingUsed, allowSharing)) {
-                    continue;
-                }
-                int coveredCount = coveredCounts.getOrDefault(candidate, 0);
-                if (coveredCount == 0) {
                     continue;
                 }
                 long[] candidateIdx = indicesByCell.get(candidate);
@@ -1203,16 +1218,22 @@ public class GeohashUtils {
                 double blockCenterLon = blockCenterCoordinate(
                         Math.floorDiv(candidateIdx[1], PRIMARY_BLOCK_SIZE), PRIMARY_BLOCK_SIZE, lonStep, 180.0);
                 double distance = distanceToPoint(candidate, blockCenterLat, blockCenterLon);
-                if (coveredCount > bestCovered
-                        || (coveredCount == bestCovered && distance < bestDistance)) {
+                boolean candidateIsCovered = coveredCells.contains(candidate);
+                if (best == null || (bestIsCovered && !candidateIsCovered)
+                        || (bestIsCovered == candidateIsCovered
+                            && (coveredCount > bestCovered
+                                || (coveredCount == bestCovered && distance < bestDistance)
+                                || (coveredCount == bestCovered && distance == bestDistance
+                                    && candidate.compareTo(best) < 0)))) {
                     best = candidate;
                     bestCovered = coveredCount;
                     bestDistance = distance;
+                    bestIsCovered = candidateIsCovered;
                 }
             }
             if (best == null) {
-                log.debug("Coverage fill stopped with {} uncovered cells still unavailable", uncovered.size());
-                return;
+                throw new NoAvailableGeohashException(
+                        "Cannot cover " + uncovered.size() + " intersecting cells with available geohashes");
             }
             selected.add(best);
             selectedSet.add(best);
@@ -1370,17 +1391,6 @@ public class GeohashUtils {
             }
         }
         return true;
-    }
-
-    private List<String> uncoveredIntersectingCells(
-            Set<String> intersectingCells, List<long[]> selectedIndices, Map<String, long[]> indicesByCell) {
-        List<String> uncovered = new ArrayList<>();
-        for (String cell : intersectingCells) {
-            if (!isCellCovered(indicesByCell.get(cell), selectedIndices)) {
-                uncovered.add(cell);
-            }
-        }
-        return uncovered;
     }
 
     private boolean isCellCovered(long[] cellIdx, List<long[]> selectedIndices) {

@@ -226,6 +226,29 @@ public class GeometryUtils {
     public static Polygon buildTriangularExtensionWedgeWithUtm(Coordinate endpointLatLon,
             Coordinate pathNeighborLatLon, double corridorHalfWidthMeters, double lengthOffsetMeters,
             double tipWidthMeters) throws Exception {
+        return buildTriangularExtensionWedgeWithUtm(endpointLatLon, pathNeighborLatLon, corridorHalfWidthMeters,
+                lengthOffsetMeters, tipWidthMeters, 0.0);
+    }
+
+    /**
+     * Builds a triangular or trapezoidal extension wedge in UTM, with its base
+     * moved outward past the endpoint along the path direction. The base spans
+     * {@code corridorHalfWidthMeters} on each side of the base centre and the tip
+     * sits {@code lengthOffsetMeters} beyond the base centre.
+     * Input coordinates use the same (lat, lon) axis order as the buffer helper.
+     *
+     * @param endpointLatLon          path endpoint in (lat, lon) order
+     * @param pathNeighborLatLon      adjacent path vertex in (lat, lon) order, used for direction
+     * @param corridorHalfWidthMeters half width of the wedge base
+     * @param lengthOffsetMeters      distance from the wedge base to the tip
+     * @param tipWidthMeters          width of the tip; 0 gives a pointed tip
+     * @param baseOffsetMeters        distance past the endpoint, along the path direction, where the wedge base starts
+     * @return the wedge in WGS84 coordinates, (lon, lat) order
+     * @throws Exception if coordinate transformation fails
+     */
+    public static Polygon buildTriangularExtensionWedgeWithUtm(Coordinate endpointLatLon,
+            Coordinate pathNeighborLatLon, double corridorHalfWidthMeters, double lengthOffsetMeters,
+            double tipWidthMeters, double baseOffsetMeters) throws Exception {
         LineString reference = geometryFactory.createLineString(new Coordinate[] { endpointLatLon, pathNeighborLatLon });
         Point center = reference.getCentroid();
         int utmZone = (int) ((center.getY() + 180) / 6) + 1;
@@ -253,11 +276,14 @@ public class GeometryUtils {
         double perpY = dirX;
         double tipHalfWidth = tipWidthMeters / 2.0;
 
-        Coordinate baseLeft = offsetByPerpendicular(endpointUtm, perpX, perpY, -corridorHalfWidthMeters);
-        Coordinate baseRight = offsetByPerpendicular(endpointUtm, perpX, perpY, corridorHalfWidthMeters);
+        Coordinate baseCenter = new Coordinate(
+                endpointUtm.x + dirX * baseOffsetMeters,
+                endpointUtm.y + dirY * baseOffsetMeters);
+        Coordinate baseLeft = offsetByPerpendicular(baseCenter, perpX, perpY, -corridorHalfWidthMeters);
+        Coordinate baseRight = offsetByPerpendicular(baseCenter, perpX, perpY, corridorHalfWidthMeters);
         Coordinate tipCenter = new Coordinate(
-                endpointUtm.x + dirX * lengthOffsetMeters,
-                endpointUtm.y + dirY * lengthOffsetMeters);
+                baseCenter.x + dirX * lengthOffsetMeters,
+                baseCenter.y + dirY * lengthOffsetMeters);
 
         Coordinate[] ringUtm;
         if (tipHalfWidth <= 0) {

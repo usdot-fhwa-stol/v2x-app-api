@@ -1,12 +1,15 @@
 package usdot.v2x.app.api.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -59,6 +62,7 @@ class GeofenceDeploymentConverterOverrideThresholdTest {
 
     private GeofenceProperties properties;
     private GeohashUtils geohashUtils;
+    private ErrorLoggingService errorLoggingService;
     private GeofenceDeploymentConverter converter;
 
     @BeforeEach
@@ -70,9 +74,10 @@ class GeofenceDeploymentConverterOverrideThresholdTest {
         properties.getLimits().setMaxCandidateCells(100_000);
         properties.getLimits().setAllowOverlappingGeohashes(true);
 
+        errorLoggingService = mock(ErrorLoggingService.class);
         geohashUtils = new GeohashUtils(
                 new com.fasterxml.jackson.databind.ObjectMapper(),
-                mock(ErrorLoggingService.class),
+                errorLoggingService,
                 properties,
                 mock(JdbcTemplate.class));
 
@@ -173,6 +178,77 @@ class GeofenceDeploymentConverterOverrideThresholdTest {
 
         assertEquals(-83.0470, firstLongitude(preview.getGeofence()), 0.0001);
         assertTrue(preview.getGeohashCount() < overrideCount);
+    }
+
+    @Test
+    void convertFallsBackWhenRetainedOverridesRawCellsExceedMaximum() {
+        GeofenceFeatureCollection override = overrideWithRawCellsAboveMaximum();
+
+        GeofenceDeploymentRequest converted = converter.convertToGeofenceDeploymentRequest(deposit(override));
+
+        assertEquals(-83.0470, firstLongitude(converted.getGeojson()), 0.0001);
+        assertTrue(converted.getGeohashes().size() <= properties.getLimits().getMaxGeohashes());
+    }
+
+    @Test
+    void previewUsesTheSameRawCellLimitFallbackWithAndWithoutConflictChecks() {
+        GeofenceFeatureCollection override = overrideWithRawCellsAboveMaximum();
+
+        for (boolean checkConflicts : List.of(false, true)) {
+            GeohashPreviewResponse preview = converter.previewGeohashes(deposit(override), checkConflicts);
+
+            assertEquals(-83.0470, firstLongitude(preview.getGeofence()), 0.0001);
+            assertTrue(preview.getGeohashCount() <= properties.getLimits().getMaxGeohashes());
+        }
+    }
+
+    @Test
+    void convertFallsBackWhenOverrideHasNoUsableGeometry() {
+        for (GeofenceFeatureCollection override : overridesWithoutGeometry()) {
+            GeofenceDeploymentRequest converted = converter.convertToGeofenceDeploymentRequest(deposit(override));
+
+            assertEquals(-83.0470, firstLongitude(converted.getGeojson()), 0.0001);
+            assertFalse(converted.getGeohashes().isEmpty());
+        }
+        verify(errorLoggingService, never())
+                .logErrorFromRequest(eq("GEOHASH_EXTRACTION_ERROR"), any(), any(), any());
+    }
+
+    @Test
+    void previewFallsBackWhenOverrideHasNoUsableGeometry() {
+        for (GeofenceFeatureCollection override : overridesWithoutGeometry()) {
+            GeohashPreviewResponse preview = converter.previewGeohashes(deposit(override), false);
+
+            assertEquals(-83.0470, firstLongitude(preview.getGeofence()), 0.0001);
+            assertTrue(preview.getGeohashCount() > 0);
+        }
+        verify(errorLoggingService, never())
+                .logErrorFromRequest(eq("GEOHASH_EXTRACTION_ERROR"), any(), any(), any());
+    }
+
+    private static List<GeofenceFeatureCollection> overridesWithoutGeometry() {
+        GeofenceFeature featureWithoutGeometry = new GeofenceFeature();
+        featureWithoutGeometry.setType("Feature");
+        featureWithoutGeometry.setProperties(Map.of());
+
+        GeofenceFeatureCollection withNullGeometry = new GeofenceFeatureCollection();
+        withNullGeometry.setType("FeatureCollection");
+        withNullGeometry.setFeatures(List.of(featureWithoutGeometry));
+
+        GeofenceFeatureCollection withNoFeatures = new GeofenceFeatureCollection();
+        withNoFeatures.setType("FeatureCollection");
+        withNoFeatures.setFeatures(List.of());
+
+        return List.of(withNullGeometry, withNoFeatures);
+    }
+
+    private GeofenceFeatureCollection overrideWithRawCellsAboveMaximum() {
+        GeofenceFeatureCollection override = polygon(LARGE_OVERRIDE_RING);
+        int representatives = geohashCount(override);
+        assertTrue(unfilteredGeohashCount(override) > representatives);
+        properties.getLimits().setOverrideGeohashThreshold(representatives);
+        properties.getLimits().setMaxGeohashes(representatives);
+        return override;
     }
 
     private DepositRequest deposit(GeofenceFeatureCollection override) {

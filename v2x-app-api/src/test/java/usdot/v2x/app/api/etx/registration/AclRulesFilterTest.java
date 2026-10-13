@@ -3,13 +3,16 @@ package usdot.v2x.app.api.etx.registration;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import usdot.v2x.app.api.config.etx.EtxProperties;
 
@@ -55,5 +58,41 @@ class AclRulesFilterTest {
         aclRules.add("invalid-rule");
 
         assertSame(aclRules, AclRulesFilter.filterSubscribeTopics(aclRules));
+    }
+
+    @Test
+    void filterSubscribeTopics_doesNotGrantSubscribeWhenRuleHasNoSubscribeKey() {
+        Map<String, Object> rule = new HashMap<>();
+        rule.put("publish", List.of("vzimp/1/GeoRelevance/+/+/Public/j2735_gr/TIM/+"));
+        List<Map<String, Object>> aclRules = List.of(rule);
+
+        AclRulesFilter.filterSubscribeTopics(aclRules);
+
+        assertFalse(rule.containsKey("subscribe"));
+    }
+
+    @Test
+    void filterSubscribeTopics_keepsEmptySubscribeListEmpty() {
+        List<String> subscribe = new ArrayList<>();
+        Map<String, Object> rule = new HashMap<>();
+        rule.put("subscribe", subscribe);
+        List<Map<String, Object>> aclRules = List.of(rule);
+
+        AclRulesFilter.filterSubscribeTopics(aclRules);
+
+        assertSame(subscribe, rule.get("subscribe"));
+        assertEquals(0, subscribe.size());
+    }
+
+    @Test
+    void filterSubscribeTopics_keepsNullSubscribeValue() {
+        Map<String, Object> rule = new HashMap<>();
+        rule.put("subscribe", null);
+        List<Map<String, Object>> aclRules = List.of(rule);
+
+        AclRulesFilter.filterSubscribeTopics(aclRules);
+
+        assertTrue(rule.containsKey("subscribe"));
+        assertNull(rule.get("subscribe"));
     }
 }

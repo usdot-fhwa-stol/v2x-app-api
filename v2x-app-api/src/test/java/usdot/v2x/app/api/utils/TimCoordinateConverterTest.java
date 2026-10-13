@@ -8,6 +8,8 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.LineString;
+import org.locationtech.jts.operation.buffer.BufferParameters;
 import org.locationtech.jts.operation.distance.DistanceOp;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -338,15 +340,17 @@ class TimCoordinateConverterTest {
     public void triangularExtensionTipWidthWidensTip() throws Exception {
         List<TravelerDataFrame> dataFrames = loadDataFrames("EastWestPathOffsetTIM.json");
         double lengthOffsetMeters = 300.0;
-        double corridorHalfWidthMeters = 55.0;
+        double geofenceOffsetMeters = 55.0;
+        double corridorHalfWidthMeters = 5.0 + geofenceOffsetMeters; // fixture laneWidth is 500 cm, plus offset
         double tipWidthMeters = 40.0;
-        TimCoordinateConverter.TimGeometry pointed = convertOpenPath(dataFrames, corridorHalfWidthMeters,
+        TimCoordinateConverter.TimGeometry pointed = convertOpenPath(dataFrames, geofenceOffsetMeters,
                 lengthOffsetMeters, 0.0);
-        TimCoordinateConverter.TimGeometry blunt = convertOpenPath(dataFrames, corridorHalfWidthMeters,
+        TimCoordinateConverter.TimGeometry blunt = convertOpenPath(dataFrames, geofenceOffsetMeters,
                 lengthOffsetMeters, tipWidthMeters);
 
         Coordinate end = pointed.pathGeometry.getCoordinateN(pointed.pathGeometry.getNumPoints() - 1);
-        Point tipCenter = destinationPoint(end, 90, lengthOffsetMeters);
+        // Probe 2 m inside the real tip, which sits corridor half width plus length offset past the end
+        Point tipCenter = destinationPoint(end, 90, corridorHalfWidthMeters + lengthOffsetMeters - 2.0);
         Point2D tipOffset = GeometryUtils.calculateDestinationPoint(tipCenter.getCoordinate().x,
                 tipCenter.getCoordinate().y, 0, tipWidthMeters / 2.0 - 5.0);
         Point nearTipEdge = GeometryUtils.getGeometryFactory()
@@ -392,10 +396,9 @@ class TimCoordinateConverterTest {
 
         double extraLengthMeters = lonDeltaToMeters(bothEnvelope.getWidth() - widthOnlyEnvelope.getWidth(), 40.0);
         double extraWidthMeters = latDeltaToMeters(bothEnvelope.getHeight() - widthOnlyEnvelope.getHeight());
-        double corridorHalfWidthMeters = geofenceOffsetMeters + 5.0; // fixture laneWidth is 500 cm
 
-        assertEquals(2 * (lengthOffsetMeters - corridorHalfWidthMeters), extraLengthMeters, 30.0,
-                "Triangular extension should add configured length beyond flat-cap corridor ends");
+        assertEquals(2 * lengthOffsetMeters, extraLengthMeters, 30.0,
+                "Triangular extension should add configured length beyond square-cap corridor ends");
         assertEquals(0.0, extraWidthMeters, 5.0,
                 "Adding a length offset must not widen a geofence that already has a width buffer");
     }
@@ -411,52 +414,96 @@ class TimCoordinateConverterTest {
     }
 
     @Test
-    public void extendOpenPathLengthMovesEndpointsAlongLatLonPath() {
-        Coordinate start = new Coordinate(40.0, -105.0); // lat, lon for UTM input
-        Coordinate end = new Coordinate(40.0, -104.99);
-        Coordinate[] extended = TimCoordinateConverter.extendOpenPathLength(
-                new Coordinate[] { start, end }, 1000.0);
+    public void openPathEndWithoutExtensionKeepsFullWidthSquareCap() throws Exception {
+        List<TravelerDataFrame> dataFrames = loadDataFrames("ThreeRegionEastWestPathTIM.json");
+        double geofenceOffsetMeters = 10.0;
+        double corridorHalfWidthMeters = 5.0 + geofenceOffsetMeters; // fixture laneWidth is 500 cm
+        TimCoordinateConverter.TimGeometry geometry = convertOpenPath(dataFrames, geofenceOffsetMeters, 30.0);
+        Coordinate[] path = geometry.pathGeometry.getCoordinates();
 
-        assertEquals(4, extended.length, "Both-end extension should prepend and append points");
-        assertEquals(start.x, extended[0].x, 0.001, "Start latitude should stay on an east-west path");
-        assertTrue(extended[0].y < start.y, "Start should move west (more negative longitude)");
-        assertEquals(start, extended[1]);
-        assertEquals(end, extended[2]);
-        assertEquals(end.x, extended[3].x, 0.001, "End latitude should stay on an east-west path");
-        assertTrue(extended[3].y > end.y, "End should move east (more positive longitude)");
+        // Region 0 is START-only, so its END (path[1]) keeps only the square cap
+        assertTrue(covers(geometry.geofenceGeometry,
+                beyondEndpoint(path[0], path[1], corridorHalfWidthMeters - 1)),
+                "Non-extended END of the first region should keep its full-width square cap");
+        assertFalse(covers(geometry.geofenceGeometry,
+                beyondEndpoint(path[0], path[1], corridorHalfWidthMeters + 5)),
+                "Non-extended END of the first region should not extend past the square cap");
 
-        Point2D expectedStart = GeometryUtils.calculateDestinationPoint(start.y, start.x, 270, 1000);
-        Point2D expectedEnd = GeometryUtils.calculateDestinationPoint(end.y, end.x, 90, 1000);
-        assertEquals(expectedStart.getY(), extended[0].x, 0.00001);
-        assertEquals(expectedStart.getX(), extended[0].y, 0.00001);
-        assertEquals(expectedEnd.getY(), extended[3].x, 0.00001);
-        assertEquals(expectedEnd.getX(), extended[3].y, 0.00001);
+        // Region 2 is END-only, so its START (path[4]) keeps only the square cap
+        assertTrue(covers(geometry.geofenceGeometry,
+                beyondEndpoint(path[5], path[4], corridorHalfWidthMeters - 1)),
+                "Non-extended START of the last region should keep its full-width square cap");
+        assertFalse(covers(geometry.geofenceGeometry,
+                beyondEndpoint(path[5], path[4], corridorHalfWidthMeters + 5)),
+                "Non-extended START of the last region should not extend past the square cap");
     }
 
     @Test
-    public void extendOpenPathLengthStartOnlyDoesNotMoveEnd() {
-        Coordinate start = new Coordinate(40.0, -105.0);
-        Coordinate end = new Coordinate(40.0, -104.99);
-        Coordinate[] extended = TimCoordinateConverter.extendOpenPathLength(
-                new Coordinate[] { start, end }, 1000.0, TimCoordinateConverter.PathLengthExtension.START);
+    public void extendedEndsReachCorridorHalfWidthPlusLengthOffsetAlongCenterline() throws Exception {
+        List<TravelerDataFrame> dataFrames = loadDataFrames("EastWestPathOffsetTIM.json");
+        double geofenceOffsetMeters = 10.0;
+        double lengthOffsetMeters = 300.0;
+        double corridorHalfWidthMeters = 5.0 + geofenceOffsetMeters; // fixture laneWidth is 500 cm
+        double reachMeters = corridorHalfWidthMeters + lengthOffsetMeters;
+        TimCoordinateConverter.TimGeometry geometry = convertOpenPath(dataFrames, geofenceOffsetMeters,
+                lengthOffsetMeters);
+        Coordinate[] path = geometry.pathGeometry.getCoordinates();
+        Coordinate start = path[0];
+        Coordinate startNeighbor = path[1];
+        Coordinate end = path[path.length - 1];
+        Coordinate endNeighbor = path[path.length - 2];
 
-        assertEquals(3, extended.length);
-        assertTrue(extended[0].y < start.y);
-        assertEquals(start, extended[1]);
-        assertEquals(end, extended[2]);
+        assertTrue(covers(geometry.geofenceGeometry, beyondEndpoint(startNeighbor, start, reachMeters - 1)),
+                "Start should reach corridor half width plus length offset");
+        assertFalse(covers(geometry.geofenceGeometry, beyondEndpoint(startNeighbor, start, reachMeters + 5)),
+                "Start should not reach beyond corridor half width plus length offset");
+        assertTrue(covers(geometry.geofenceGeometry, beyondEndpoint(endNeighbor, end, reachMeters - 1)),
+                "End should reach corridor half width plus length offset");
+        assertFalse(covers(geometry.geofenceGeometry, beyondEndpoint(endNeighbor, end, reachMeters + 5)),
+                "End should not reach beyond corridor half width plus length offset");
     }
 
     @Test
-    public void extendOpenPathLengthEndOnlyDoesNotMoveStart() {
-        Coordinate start = new Coordinate(40.0, -105.0);
-        Coordinate end = new Coordinate(40.0, -104.99);
-        Coordinate[] extended = TimCoordinateConverter.extendOpenPathLength(
-                new Coordinate[] { start, end }, 1000.0, TimCoordinateConverter.PathLengthExtension.END);
+    public void extendedGeofenceCoversPlainSquareCapCorridor() throws Exception {
+        List<TravelerDataFrame> dataFrames = loadDataFrames("EastWestPathOffsetTIM.json");
+        double geofenceOffsetMeters = 10.0;
+        double corridorHalfWidthMeters = 5.0 + geofenceOffsetMeters; // fixture laneWidth is 500 cm
+        TimCoordinateConverter.TimGeometry extended = convertOpenPath(dataFrames, geofenceOffsetMeters, 300.0);
 
-        assertEquals(3, extended.length);
-        assertEquals(start, extended[0]);
-        assertEquals(end, extended[1]);
-        assertTrue(extended[2].y > end.y);
+        Geometry plain = plainSquareCapCorridor(extended.pathGeometry.getCoordinates(), corridorHalfWidthMeters);
+
+        // Union with the wedges re-nodes the cap edges, so allow ~0.1 mm of floating-point slack
+        assertTrue(extended.geofenceGeometry.buffer(1e-9).covers(plain),
+                "Extended geofence should contain the plain square-cap corridor");
+    }
+
+    @Test
+    public void multiRegionExtendedGeofenceCoversPlainSquareCapCorridorOfEachRegion() throws Exception {
+        List<TravelerDataFrame> dataFrames = loadDataFrames("ThreeRegionEastWestPathTIM.json");
+        double geofenceOffsetMeters = 10.0;
+        double corridorHalfWidthMeters = 5.0 + geofenceOffsetMeters; // fixture laneWidth is 500 cm
+        TimCoordinateConverter.TimGeometry extended = convertOpenPath(dataFrames, geofenceOffsetMeters, 30.0);
+        Coordinate[] path = extended.pathGeometry.getCoordinates();
+
+        for (int region = 0; region < 3; region++) {
+            Coordinate[] regionPath = { path[2 * region], path[2 * region + 1] };
+            Geometry plain = plainSquareCapCorridor(regionPath, corridorHalfWidthMeters);
+            assertTrue(extended.geofenceGeometry.buffer(1e-9).covers(plain),
+                    "Geofence should contain the plain square-cap corridor of region " + region);
+        }
+    }
+
+    @Test
+    public void zeroPathLengthOffsetKeepsPlainSquareCapCorridor() throws Exception {
+        List<TravelerDataFrame> dataFrames = loadDataFrames("EastWestPathOffsetTIM.json");
+        double geofenceOffsetMeters = 10.0;
+        TimCoordinateConverter.TimGeometry geometry = convertOpenPath(dataFrames, geofenceOffsetMeters, 0.0);
+
+        Geometry plain = plainSquareCapCorridor(geometry.pathGeometry.getCoordinates(),
+                5.0 + geofenceOffsetMeters); // fixture laneWidth is 500 cm
+
+        assertTrue(geometry.geofenceGeometry.equalsExact(plain, 1e-9),
+                "Without a length offset the geofence should be the plain square-cap corridor");
     }
 
     @Test
@@ -508,18 +555,6 @@ class TimCoordinateConverterTest {
                 "Inner end of the first region should not be length-extended");
     }
 
-    @Test
-    public void extendOpenPathLengthIsNoOpWhenOffsetIsZero() {
-        Coordinate[] coords = {
-                new Coordinate(40.0, -105.0),
-                new Coordinate(40.1, -105.0)
-        };
-
-        Coordinate[] result = TimCoordinateConverter.extendOpenPathLength(coords, 0.0);
-
-        assertSame(coords, result);
-    }
-
     private List<TravelerDataFrame> loadDataFrames(String resourceName) throws Exception {
         JsonNode sampleTim = objectMapper.readTree(
                 getClass().getResourceAsStream("/usdot/v2x/app/api/utils/" + resourceName));
@@ -551,6 +586,30 @@ class TimCoordinateConverterTest {
 
     private static Coordinate midpoint(Coordinate start, Coordinate end) {
         return new Coordinate((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
+    }
+
+    /**
+     * Point {@code distanceMeters} beyond {@code endpoint}, continuing the direction
+     * from {@code neighbor} to {@code endpoint}. Coordinates are (lon, lat).
+     */
+    private static Point beyondEndpoint(Coordinate neighbor, Coordinate endpoint, double distanceMeters) {
+        double bearingDegrees = GeometryUtils.calculateBearing(neighbor.x, neighbor.y, endpoint.x, endpoint.y);
+        return destinationPoint(endpoint, bearingDegrees, distanceMeters);
+    }
+
+    /**
+     * Square-cap corridor built the same way the converter buffers an open path.
+     * Input coordinates are (lon, lat), as in {@code pathGeometry}.
+     */
+    private static Geometry plainSquareCapCorridor(Coordinate[] lonLatPath, double halfWidthMeters)
+            throws Exception {
+        Coordinate[] latLonPath = new Coordinate[lonLatPath.length];
+        for (int i = 0; i < lonLatPath.length; i++) {
+            latLonPath[i] = new Coordinate(lonLatPath[i].y, lonLatPath[i].x);
+        }
+        LineString line = GeometryUtils.getGeometryFactory().createLineString(latLonPath);
+        return GeometryUtils.bufferGeometryWithUtm(line, halfWidthMeters,
+                GeometryUtils.createBufferParameters(1, BufferParameters.CAP_SQUARE));
     }
 
     private static boolean covers(Geometry geofence, Point point) {

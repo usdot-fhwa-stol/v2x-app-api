@@ -119,4 +119,46 @@ class GeometryUtilsTest {
         assertSame(factory1, factory2);
         assertNotNull(factory1);
     }
+
+    @Test
+    void wedgeWithZeroBaseOffsetMatchesFiveArgOverload() throws Exception {
+        Coordinate endpoint = new Coordinate(40.0, -105.0); // (lat, lon) for UTM input
+        Coordinate neighbor = new Coordinate(40.0, -105.01);
+
+        Polygon fiveArg = GeometryUtils.buildTriangularExtensionWedgeWithUtm(endpoint, neighbor, 57.5, 300.0, 20.0);
+        Polygon sixArg = GeometryUtils.buildTriangularExtensionWedgeWithUtm(endpoint, neighbor, 57.5, 300.0, 20.0,
+                0.0);
+
+        assertTrue(fiveArg.equalsExact(sixArg, 1e-9));
+    }
+
+    @Test
+    void wedgeBaseOffsetMovesBaseOutAlongPathDirection() throws Exception {
+        Coordinate endpoint = new Coordinate(40.0, -105.0); // (lat, lon) for UTM input
+        Coordinate neighbor = new Coordinate(40.0, -105.01); // path runs east, so the wedge points east
+        double baseOffsetMeters = 50.0;
+        double lengthOffsetMeters = 300.0;
+
+        Polygon wedge = GeometryUtils.buildTriangularExtensionWedgeWithUtm(endpoint, neighbor, 57.5,
+                lengthOffsetMeters, 0.0, baseOffsetMeters);
+
+        // Wedge coordinates are (lon, lat); endpoint is (lat, lon), so swap for the geodesic helper
+        double farthestMeters = 0.0;
+        for (Coordinate c : wedge.getCoordinates()) {
+            farthestMeters = Math.max(farthestMeters,
+                    GeometryUtils.calculateDistanceMeters(endpoint.y, endpoint.x, c.x, c.y));
+        }
+        assertEquals(baseOffsetMeters + lengthOffsetMeters, farthestMeters, 0.5,
+                "Wedge tip should sit base offset plus length offset from the endpoint");
+
+        GeometryFactory factory = GeometryUtils.getGeometryFactory();
+        Point2D justBeyondBase = GeometryUtils.calculateDestinationPoint(endpoint.y, endpoint.x, 90,
+                baseOffsetMeters + 1);
+        Point2D justBeforeBase = GeometryUtils.calculateDestinationPoint(endpoint.y, endpoint.x, 90,
+                baseOffsetMeters - 1);
+        assertTrue(wedge.covers(factory.createPoint(new Coordinate(justBeyondBase.getX(), justBeyondBase.getY()))),
+                "Centreline point just past the base should be covered");
+        assertFalse(wedge.covers(factory.createPoint(new Coordinate(justBeforeBase.getX(), justBeforeBase.getY()))),
+                "Centreline point just before the base should not be covered");
+    }
 }

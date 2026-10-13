@@ -59,40 +59,4 @@ class UserLimitsServiceTest {
         assertTrue(userLimitsService.existsIncludingInactive("user", "MergentPlatform"));
         verify(userLimitsRepository).existsByUsernameAndVendorIdIgnoreActive("user", "MergentPlatform");
     }
-
-    @Test
-    void reactivateIfInactive_reactivatesWithoutChangingLimit() {
-        UserLimits inactive = new UserLimits();
-        inactive.setId(42L);
-        inactive.setUsername("user");
-        inactive.setVendorId("MergentPlatform");
-        inactive.setMaxRegistrations(7);
-        inactive.setIsActive(false);
-
-        when(userLimitsRepository.findByUsernameAndVendorIdIgnoreActive("user", "MergentPlatform"))
-                .thenReturn(Optional.of(inactive));
-        when(userLimitsRepository.save(any(UserLimits.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        userLimitsService.reactivateIfInactive("user", "MergentPlatform", "system");
-
-        ArgumentCaptor<UserLimits> captor = ArgumentCaptor.forClass(UserLimits.class);
-        verify(userLimitsRepository).save(captor.capture());
-        assertTrue(captor.getValue().getIsActive());
-        assertEquals(7, captor.getValue().getMaxRegistrations());
-    }
-
-    @Test
-    void reactivateIfInactive_skipsAlreadyActiveRow() {
-        UserLimits active = new UserLimits();
-        active.setUsername("user");
-        active.setVendorId("MergentPlatform");
-        active.setIsActive(true);
-
-        when(userLimitsRepository.findByUsernameAndVendorIdIgnoreActive("user", "MergentPlatform"))
-                .thenReturn(Optional.of(active));
-
-        userLimitsService.reactivateIfInactive("user", "MergentPlatform", "system");
-
-        verify(userLimitsRepository, never()).save(any(UserLimits.class));
-    }
 }

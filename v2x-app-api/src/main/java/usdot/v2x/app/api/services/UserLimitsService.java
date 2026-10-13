@@ -165,29 +165,6 @@ public class UserLimitsService {
     }
 
     /**
-     * Re-activate a soft-deleted user-limits row without changing max_registrations.
-     * Needed because the unique constraint still occupies (username, vendor_id).
-     */
-    @Transactional
-    public void reactivateIfInactive(String username, String vendorId, String updatedBy) {
-        Optional<UserLimits> existing = userLimitsRepository.findByUsernameAndVendorIdIgnoreActive(username, vendorId);
-        if (existing.isEmpty()) {
-            return;
-        }
-
-        UserLimits limits = existing.get();
-        if (Boolean.TRUE.equals(limits.getIsActive())) {
-            return;
-        }
-
-        limits.setIsActive(true);
-        limits.setUpdatedBy(updatedBy);
-        limits.setUpdatedAt(Instant.now());
-        userLimitsRepository.save(limits);
-        log.info("Re-activated user limits for user: {}, vendor: {}", username, vendorId);
-    }
-
-    /**
      * Re-activate all inactive user limits for a specific vendor
      * This is called when a vendor is re-added
      */

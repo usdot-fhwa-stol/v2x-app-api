@@ -21,6 +21,12 @@ import usdot.v2x.app.api.config.GeometryProperties;
 @Component
 public class TimCoordinateConverter {
     private static final GeometryFactory geometryFactory = GeometryUtils.getGeometryFactory();
+    /**
+     * Distance the triangular extension wedge base is pulled back inside the square
+     * cap of its corridor. The wedge overlaps the cap slightly so the union has no
+     * sliver where the buffer and the wedge use different UTM zones.
+     */
+    private static final double SEAM_OVERLAP_METERS = 0.05;
     private final GeometryProperties geometryProperties;
 
     enum PathLengthExtension {
@@ -375,8 +381,10 @@ public class TimCoordinateConverter {
             double corridorHalfWidth = (laneWidthCm / 100.0) + geometryProperties.getGeofenceOffsetMeters();
             boolean hasTriangularExtension = extension != PathLengthExtension.NONE && lengthOffsetMeters > 0;
 
-            int capStyle = hasTriangularExtension ? BufferParameters.CAP_FLAT : BufferParameters.CAP_SQUARE;
-            BufferParameters bufferParams = GeometryUtils.createBufferParameters(1, capStyle);
+            // Every end keeps the full-width square cap. An extended end adds a wedge that
+            // starts at the cap's outer edge, so the extended geometry always contains the
+            // plain square-cap corridor.
+            BufferParameters bufferParams = GeometryUtils.createBufferParameters(1, BufferParameters.CAP_SQUARE);
 
             LineString lineString = geometryFactory.createLineString(coords);
             Geometry corridor = GeometryUtils.bufferGeometryWithUtm(lineString, corridorHalfWidth, bufferParams);
@@ -387,13 +395,14 @@ public class TimCoordinateConverter {
 
             List<Polygon> parts = new ArrayList<>();
             addPolygons(parts, corridor);
+            double wedgeBaseOffsetMeters = Math.max(0.0, corridorHalfWidth - SEAM_OVERLAP_METERS);
 
             if (extension == PathLengthExtension.START || extension == PathLengthExtension.BOTH) {
                 Coordinate start = coords[0];
                 Coordinate startNext = findNextDistinctCoordinate(coords, 0, 1);
                 if (startNext != null) {
                     parts.add(GeometryUtils.buildTriangularExtensionWedgeWithUtm(start, startNext, corridorHalfWidth,
-                            lengthOffsetMeters, tipWidthMeters));
+                            lengthOffsetMeters, tipWidthMeters, wedgeBaseOffsetMeters));
                 }
             }
 
@@ -402,7 +411,7 @@ public class TimCoordinateConverter {
                 Coordinate endPrev = findNextDistinctCoordinate(coords, coords.length - 1, -1);
                 if (endPrev != null) {
                     parts.add(GeometryUtils.buildTriangularExtensionWedgeWithUtm(end, endPrev, corridorHalfWidth,
-                            lengthOffsetMeters, tipWidthMeters));
+                            lengthOffsetMeters, tipWidthMeters, wedgeBaseOffsetMeters));
                 }
             }
 
@@ -411,69 +420,6 @@ public class TimCoordinateConverter {
         } catch (Exception e) {
             throw new RuntimeException("Error creating geofence polygon", e);
         }
-    }
-
-    /**
-     * Builds a wedge polygon extending from a path endpoint. Coordinates are in
-     * (lat, lon) order to match the UTM buffer input convention.
-     */
-    static Polygon buildTriangularExtensionWedge(Coordinate endpoint, Coordinate pathNeighbor,
-            double corridorHalfWidth, double lengthOffsetMeters, double tipWidthMeters) {
-        try {
-            return GeometryUtils.buildTriangularExtensionWedgeWithUtm(endpoint, pathNeighbor, corridorHalfWidth,
-                    lengthOffsetMeters, tipWidthMeters);
-        } catch (Exception e) {
-            throw new RuntimeException("Error building triangular extension wedge", e);
-        }
-    }
-
-    /**
-     * Extends the outer end(s) of an open path. Coordinates are in (lat, lon)
-     * order to match the UTM buffer input convention. Middle regions should pass
-     * {@link PathLengthExtension#NONE}.
-     */
-    static Coordinate[] extendOpenPathLength(Coordinate[] coords, double lengthOffsetMeters) {
-        return extendOpenPathLength(coords, lengthOffsetMeters, PathLengthExtension.BOTH);
-    }
-
-    static Coordinate[] extendOpenPathLength(Coordinate[] coords, double lengthOffsetMeters,
-            PathLengthExtension extension) {
-        if (lengthOffsetMeters <= 0 || coords.length < 2 || extension == PathLengthExtension.NONE) {
-            return coords;
-        }
-
-        List<Coordinate> extended = new ArrayList<>();
-
-        if (extension == PathLengthExtension.START || extension == PathLengthExtension.BOTH) {
-            Coordinate start = coords[0];
-            Coordinate startNext = findNextDistinctCoordinate(coords, 0, 1);
-            if (startNext != null) {
-                double reverseBearing = GeometryUtils.calculateBearing(startNext.y, startNext.x, start.y, start.x);
-                List<Coordinate> prefix = buildExtension(start, reverseBearing, lengthOffsetMeters);
-                for (int i = prefix.size() - 1; i >= 0; i--) {
-                    extended.add(prefix.get(i));
-                }
-            }
-        }
-
-        extended.addAll(Arrays.asList(coords));
-
-        if (extension == PathLengthExtension.END || extension == PathLengthExtension.BOTH) {
-            Coordinate end = coords[coords.length - 1];
-            Coordinate endPrev = findNextDistinctCoordinate(coords, coords.length - 1, -1);
-            if (endPrev != null) {
-                double endBearing = GeometryUtils.calculateBearing(endPrev.y, endPrev.x, end.y, end.x);
-                extended.addAll(buildExtension(end, endBearing, lengthOffsetMeters));
-            }
-        }
-
-        return extended.toArray(new Coordinate[0]);
-    }
-
-    private static List<Coordinate> buildExtension(Coordinate origin, double bearingDegrees, double distanceMeters) {
-        Point2D destination = GeometryUtils.calculateDestinationPoint(origin.y, origin.x, bearingDegrees,
-                distanceMeters);
-        return List.of(new Coordinate(destination.getY(), destination.getX()));
     }
 
     private static Coordinate findNextDistinctCoordinate(Coordinate[] coords, int fromIndex, int step) {

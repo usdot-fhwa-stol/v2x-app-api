@@ -89,7 +89,6 @@ public class DatabaseInitializationService implements ApplicationRunner {
                         log.info("Created default user limits for {} on vendor {}: {} registrations",
                                 username, vendor.getId(), limit);
                     } else {
-                        userLimitsService.reactivateIfInactive(username, vendor.getId(), "system");
                         log.debug("User limits already exist for {} on vendor {}", username, vendor.getId());
                     }
                 }

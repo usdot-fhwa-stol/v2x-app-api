@@ -39,27 +39,33 @@ final class GeohashScanBudget {
         if (boundingBox == null) {
             return 0;
         }
-        if (precision < 1 || precision > 12) {
-            throw new IllegalArgumentException("Geohash precision must be between 1 and 12");
-        }
+        CellRange range = cellRange(boundingBox, precision);
+        long rows = Math.max(1, range.northRow() - range.southRow() + 1);
+        long columns = Math.max(1, range.eastColumn() - range.westColumn() + 1);
+        return saturatedMultiply(rows, columns);
+    }
 
-        int bits = precision * 5;
-        double latStep = 180.0 / Math.pow(2, bits / 2);
-        double lonStep = 360.0 / Math.pow(2, (bits + 1) / 2);
+    static CellRange cellRange(BoundingBox boundingBox, int precision) {
+        double latStep = GeohashGrid.latStep(precision);
+        double lonStep = GeohashGrid.lonStep(precision);
 
         long south = gridIndex(boundingBox.getSouthLatitude(), 90.0, latStep, 90.0);
         long north = gridIndex(boundingBox.getNorthLatitude(), 90.0, latStep, 90.0);
         long west = gridIndex(boundingBox.getWestLongitude(), 180.0, lonStep, 180.0);
         long east = gridIndex(boundingBox.getEastLongitude(), 180.0, lonStep, 180.0);
 
-        long rows = Math.max(1, north - south + 1);
-        long columns = Math.max(1, east - west + 1);
-        return saturatedMultiply(rows, columns);
+        return new CellRange(south, north, west, east, latStep, lonStep);
+    }
+
+    record CellRange(long southRow, long northRow, long westColumn, long eastColumn,
+            double latitudeStep, double longitudeStep) {
     }
 
     private static long gridIndex(double coordinate, double origin, double step, double upperBound) {
-        double bounded = coordinate >= upperBound ? Math.nextDown(upperBound) : coordinate;
-        return (long) Math.floor((bounded + origin) / step);
+        long lastIndex = (long) ((upperBound + origin) / step) - 1;
+        // Adding the origin can round nextDown(upperBound) back to the upper
+        // boundary. Clamp the index itself so world edges reserve real cells only.
+        return Math.max(0, Math.min(lastIndex, (long) Math.floor((coordinate + origin) / step)));
     }
 
     private static long saturatedAdd(long left, long right) {

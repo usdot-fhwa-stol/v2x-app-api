@@ -55,7 +55,8 @@ class DatabaseInitializationServiceTest {
 
         verify(userLimitsService, never()).createOrUpdateUserLimits(anyString(), anyString(), anyInt(), anyString());
         verify(userLimitsService, atLeastOnce()).existsIncludingInactive("user", "MergentPlatform");
-        verify(userLimitsService).reactivateIfInactive("user", "MergentPlatform", "system");
+        verify(userLimitsService, never()).reactivateUserLimitsForVendor(anyString(), anyString());
+        verifyNoMoreInteractions(userLimitsService);
     }
 
     @Test

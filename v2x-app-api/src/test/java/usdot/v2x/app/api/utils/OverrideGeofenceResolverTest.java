@@ -3,7 +3,15 @@ package usdot.v2x.app.api.utils;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +26,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import usdot.v2x.app.api.config.GeofenceProperties;
+import usdot.v2x.app.api.exceptions.NoAvailableGeohashException;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.etx.configuration.geometry.Polygon;
@@ -155,6 +164,100 @@ class OverrideGeofenceResolverTest {
         GeofenceFeatureCollection resolved = resolver.resolve(null, () -> generated);
 
         assertSame(generated, resolved);
+    }
+
+    @Test
+    void noAvailableGeohashOverrideFallsBackToGenerated() {
+        GeofenceFeatureCollection override = polygon(LARGE_OVERRIDE_RING);
+        GeofenceFeatureCollection generated = polygon(TINY_GENERATED_RING);
+        GeohashUtils mockUtils = mock(GeohashUtils.class);
+        when(mockUtils.countRepresentativeGeohashes(any(GeofenceFeatureCollection.class), anyInt()))
+                .thenThrow(new NoAvailableGeohashException("none"));
+        OverrideGeofenceResolver mockResolver = new OverrideGeofenceResolver(mockUtils, properties);
+
+        assertTrue(mockResolver.exceedsThreshold(override));
+        assertSame(generated, mockResolver.resolve(override, () -> generated));
+    }
+
+    @Test
+    void unexpectedGeometryFailureFallsBackToGenerated() {
+        GeofenceFeatureCollection override = polygon(LARGE_OVERRIDE_RING);
+        GeofenceFeatureCollection generated = polygon(TINY_GENERATED_RING);
+        GeohashUtils mockUtils = mock(GeohashUtils.class);
+        when(mockUtils.countRepresentativeGeohashes(any(GeofenceFeatureCollection.class), anyInt()))
+                .thenThrow(new RuntimeException("bad geometry"));
+        OverrideGeofenceResolver mockResolver = new OverrideGeofenceResolver(mockUtils, properties);
+
+        assertTrue(mockResolver.exceedsThreshold(override));
+        assertSame(generated, mockResolver.resolve(override, () -> generated));
+    }
+
+    @Test
+    void overrideWithoutGeometryFallsBackWithoutErrorLogging() {
+        ErrorLoggingService errorLogging = mock(ErrorLoggingService.class);
+        GeohashUtils realUtils = new GeohashUtils(
+                new ObjectMapper(),
+                errorLogging,
+                properties,
+                mock(JdbcTemplate.class));
+        OverrideGeofenceResolver realResolver = new OverrideGeofenceResolver(realUtils, properties);
+        GeofenceFeatureCollection noFeatures = new GeofenceFeatureCollection();
+        noFeatures.setType("FeatureCollection");
+        noFeatures.setFeatures(List.of());
+        GeofenceFeatureCollection generated = polygon(TINY_GENERATED_RING);
+
+        assertSame(generated, realResolver.resolve(noFeatures, () -> generated));
+        verify(errorLogging, never()).logErrorFromRequest(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void resolveEvaluatesOverrideCoverageExactlyOnce() {
+        GeohashUtils mockUtils = mock(GeohashUtils.class);
+        when(mockUtils.countRepresentativeGeohashes(any(GeofenceFeatureCollection.class), anyInt()))
+                .thenReturn(1);
+        OverrideGeofenceResolver mockResolver = new OverrideGeofenceResolver(mockUtils, properties);
+        GeofenceFeatureCollection override = polygon(TINY_GENERATED_RING);
+
+        assertSame(override, mockResolver.resolve(override, () -> polygon(LARGE_OVERRIDE_RING)));
+
+        verify(mockUtils, times(1)).countRepresentativeGeohashes(any(GeofenceFeatureCollection.class), anyInt());
+        verify(mockUtils, never()).extractGeohashesFromGeofenceFeatureCollection(
+                any(GeofenceFeatureCollection.class), anyInt(), anySet());
+    }
+
+    @Test
+    void resolveWithSourceReportsOverrideWhenKept() {
+        GeofenceFeatureCollection override = polygon(TINY_GENERATED_RING);
+        properties.getLimits().setOverrideGeohashThreshold(50);
+
+        OverrideGeofenceResolver.Resolution resolution = resolver.resolveWithSource(
+                override, () -> polygon(LARGE_OVERRIDE_RING));
+
+        assertSame(override, resolution.geofence());
+        assertTrue(resolution.usedOverride());
+    }
+
+    @Test
+    void resolveWithSourceReportsGeneratedWhenOverrideExceedsThreshold() {
+        GeofenceFeatureCollection override = polygon(LARGE_OVERRIDE_RING);
+        GeofenceFeatureCollection generated = polygon(TINY_GENERATED_RING);
+        int count = geohashCount(override);
+        properties.getLimits().setOverrideGeohashThreshold(Math.max(1, count - 1));
+
+        OverrideGeofenceResolver.Resolution resolution = resolver.resolveWithSource(override, () -> generated);
+
+        assertSame(generated, resolution.geofence());
+        assertFalse(resolution.usedOverride());
+    }
+
+    @Test
+    void resolveWithSourceReportsGeneratedWhenOverrideIsMissing() {
+        GeofenceFeatureCollection generated = polygon(TINY_GENERATED_RING);
+
+        OverrideGeofenceResolver.Resolution resolution = resolver.resolveWithSource(null, () -> generated);
+
+        assertSame(generated, resolution.geofence());
+        assertFalse(resolution.usedOverride());
     }
 
     private int geohashCount(GeofenceFeatureCollection geofence) {
