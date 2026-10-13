@@ -24,6 +24,7 @@ import usdot.v2x.app.api.utils.UperUtil;
 import usdot.v2x.app.api.utils.TimCoordinateConverter;
 import usdot.v2x.app.api.utils.MapCoordinateConverter;
 import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
+import usdot.v2x.app.api.utils.OverrideGeofenceResolver;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
 import org.locationtech.jts.geom.Geometry;
 
@@ -76,6 +77,7 @@ public class ConfigurationApi {
     private DistributionType distributionType;
     private TimCoordinateConverter timCoordinateConverter;
     private MapCoordinateConverter mapCoordinateConverter;
+    private OverrideGeofenceResolver overrideGeofenceResolver;
 
     @Autowired
     public ConfigurationApi(
@@ -86,9 +88,10 @@ public class ConfigurationApi {
             ObjectMapper jsonMapper,
             @Qualifier("xmlMapper") XmlMapper xmlMapper,
             TimCoordinateConverter timCoordinateConverter,
-            MapCoordinateConverter mapCoordinateConverter) {
+            MapCoordinateConverter mapCoordinateConverter,
+            OverrideGeofenceResolver overrideGeofenceResolver) {
         this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, Clock.systemUTC(),
-                timCoordinateConverter, mapCoordinateConverter);
+                timCoordinateConverter, mapCoordinateConverter, overrideGeofenceResolver);
     }
 
     public ConfigurationApi(
@@ -99,7 +102,7 @@ public class ConfigurationApi {
             ObjectMapper jsonMapper,
             XmlMapper xmlMapper,
             Clock clock) {
-        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock, null, null);
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock, null, null, null);
     }
 
     public ConfigurationApi(
@@ -112,6 +115,21 @@ public class ConfigurationApi {
             Clock clock,
             TimCoordinateConverter timCoordinateConverter,
             MapCoordinateConverter mapCoordinateConverter) {
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock,
+                timCoordinateConverter, mapCoordinateConverter, null);
+    }
+
+    public ConfigurationApi(
+            EtxProperties etxProperties,
+            TokenService tokenService,
+            WebClient.Builder webClientBuilder,
+            MessageFrameCodec codec,
+            ObjectMapper jsonMapper,
+            XmlMapper xmlMapper,
+            Clock clock,
+            TimCoordinateConverter timCoordinateConverter,
+            MapCoordinateConverter mapCoordinateConverter,
+            OverrideGeofenceResolver overrideGeofenceResolver) {
         this.etxVendorId = etxProperties.getVendorId();
         this.tokenService = tokenService;
         this.webClient = webClientBuilder.baseUrl(etxProperties.getEndpoint() + "/api/v1/application/configurations")
@@ -123,6 +141,7 @@ public class ConfigurationApi {
         this.distributionType = etxProperties.getConfiguration().getDistributionType();
         this.timCoordinateConverter = timCoordinateConverter;
         this.mapCoordinateConverter = mapCoordinateConverter;
+        this.overrideGeofenceResolver = overrideGeofenceResolver;
     }
 
     /**
@@ -374,14 +393,19 @@ public class ConfigurationApi {
     public Mono<ResponseEntity<Void>> deposit(DepositRequest request) {
         return Mono.fromCallable(() -> parseMessageFrame(request.getAsn1Hex()))
                 .flatMap(messageFrame -> {
-                    // Extract geofence from message if override geofence is not provided
-                    GeofenceFeatureCollection deploymentRegion = request.getOverrideGeofence();
-                    if (deploymentRegion == null) {
-                        try {
+                    GeofenceFeatureCollection deploymentRegion;
+                    try {
+                        if (overrideGeofenceResolver != null) {
+                            deploymentRegion = overrideGeofenceResolver.resolve(
+                                    request.getOverrideGeofence(),
+                                    () -> extractGeofenceFromMessage(messageFrame));
+                        } else if (request.getOverrideGeofence() == null) {
                             deploymentRegion = extractGeofenceFromMessage(messageFrame);
-                        } catch (ErrorResponseException e) {
-                            return Mono.error(e);
+                        } else {
+                            deploymentRegion = request.getOverrideGeofence();
                         }
+                    } catch (ErrorResponseException e) {
+                        return Mono.error(e);
                     }
                     return createOrUpdateGeofenceWithDeploymentRegion(request, messageFrame, deploymentRegion);
                 })
