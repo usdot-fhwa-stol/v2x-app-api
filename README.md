@@ -276,6 +276,7 @@ docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml logs -f 
 
 ### Deposit
 - `POST /prd/v2/deposit/geofence` - Deposit V2X message with geofence
+- `POST /prd/v2/deposit/geofence/preview?check_conflicts=false` - Preview selected geohashes without creating a deployment. Set `check_conflicts=true` to exclude geohashes already claimed by active deployments. Requires `ROLE_ADMIN` or `ROLE_DEPOSITOR`.
 - `DELETE /prd/v2/deposit/geofence?identifier={id}` - Delete geofence deployment
 
 ### Path Management
