@@ -150,6 +150,31 @@ class RegistrationLogRepositoryTest {
         assertEquals(0L, count); // vendor2 only has expired registrations
     }
 
+    @Test
+    void testCountActiveRegistrationsByUserAndVendor_ScopedToVendor() {
+        entityManager.persistAndFlush(createRegistrationLog("device5", "user1", "vendor2",
+                RegistrationClientType.Vehicle, true, Instant.now()));
+
+        assertEquals(2L, registrationLogRepository.countActiveRegistrationsByUserAndVendor("user1", "vendor1"));
+        assertEquals(1L, registrationLogRepository.countActiveRegistrationsByUserAndVendor("user1", "vendor2"));
+    }
+
+    @Test
+    void testFindOldestRegistrationsByUserAndVendor_OrderedOldestFirst() {
+        List<RegistrationLog> result = registrationLogRepository.findOldestRegistrationsByUserAndVendor("user1",
+                "vendor1");
+
+        assertEquals(List.of("device1", "device2"), result.stream().map(RegistrationLog::getDeviceId).toList());
+    }
+
+    @Test
+    void testFindActiveByVendor() {
+        List<RegistrationLog> result = registrationLogRepository.findActiveByVendor("vendor1");
+
+        assertEquals(2, result.size());
+        assertTrue(result.stream().allMatch(RegistrationLog::getIsActive));
+    }
+
     private RegistrationLog createRegistrationLog(String deviceId, String requestedBy, String vendorId,
             RegistrationClientType clientType, boolean isActive, Instant createdAt) {
         RegistrationLog log = new RegistrationLog();

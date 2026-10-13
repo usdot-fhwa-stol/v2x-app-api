@@ -25,6 +25,19 @@ public interface RegistrationLogRepository extends JpaRepository<RegistrationLog
     Long countActiveRegistrationsByUser(@Param("requestedBy") String requestedBy);
 
     /**
+     * Count active registrations for a specific user under a specific vendor
+     */
+    @Query("SELECT COUNT(r) FROM RegistrationLog r WHERE r.requestedBy = :requestedBy AND r.vendorId = :vendorId AND r.isActive = true")
+    Long countActiveRegistrationsByUserAndVendor(@Param("requestedBy") String requestedBy,
+            @Param("vendorId") String vendorId);
+
+    /**
+     * Find active registrations for a vendor
+     */
+    @Query("SELECT r FROM RegistrationLog r WHERE r.vendorId = :vendorId AND r.isActive = true")
+    List<RegistrationLog> findActiveByVendor(@Param("vendorId") String vendorId);
+
+    /**
      * Find registrations that are expired
      */
     @Query("SELECT r FROM RegistrationLog r WHERE r.expiresAt < :currentTime AND r.isActive = true")
@@ -37,6 +50,13 @@ public interface RegistrationLogRepository extends JpaRepository<RegistrationLog
      */
     @Query("SELECT r FROM RegistrationLog r WHERE r.requestedBy = :requestedBy AND r.isActive = true ORDER BY COALESCE(r.lastConnected, r.createdAt) ASC")
     List<RegistrationLog> findOldestRegistrationsByUser(@Param("requestedBy") String requestedBy);
+
+    /**
+     * Find oldest registrations for a user under a specific vendor for cleanup
+     */
+    @Query("SELECT r FROM RegistrationLog r WHERE r.requestedBy = :requestedBy AND r.vendorId = :vendorId AND r.isActive = true ORDER BY COALESCE(r.lastConnected, r.createdAt) ASC")
+    List<RegistrationLog> findOldestRegistrationsByUserAndVendor(@Param("requestedBy") String requestedBy,
+            @Param("vendorId") String vendorId);
 
     /**
      * Find registrations by device IDs

@@ -4,19 +4,35 @@ import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.etx.registration.RegistrationApi;
 import usdot.v2x.app.api.models.UserLimits;
 import usdot.v2x.app.api.models.VendorLimits;
+import usdot.v2x.app.api.models.etx.ErrorResponseException;
+import usdot.v2x.app.api.models.etx.registration.ActiveRegistrationView;
+import usdot.v2x.app.api.models.etx.registration.ActiveRegistrationsResponse;
+import usdot.v2x.app.api.models.etx.registration.EtxClientRecord;
+import usdot.v2x.app.api.models.etx.registration.ReconcileResult;
+import usdot.v2x.app.api.models.etx.registration.RegistrationCheckResponse;
 import usdot.v2x.app.api.models.etx.registration.RegistrationClientSubType;
 import usdot.v2x.app.api.models.etx.registration.RegistrationClientType;
+import usdot.v2x.app.api.models.etx.registration.RegistrationEventType;
 import usdot.v2x.app.api.models.etx.registration.RegistrationLog;
 import usdot.v2x.app.api.models.etx.registration.RegistrationResponse;
 import usdot.v2x.app.api.repositories.RegistrationLogRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -25,6 +41,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class RegistrationLogService {
+
+    /** Upper bound on blocking ETX calls made from cleanup/reconcile paths. */
+    private static final Duration ETX_TIMEOUT = Duration.ofSeconds(30);
 
     @Autowired
     private RegistrationLogRepository registrationLogRepository;
@@ -41,8 +60,14 @@ public class RegistrationLogService {
     @Autowired
     private VendorLimitsService vendorLimitsService;
 
+    @Autowired
+    private RegistrationEventService registrationEventService;
+
     /**
-     * Log a successful registration
+     * Log a successful registration. Capacity is enforced beforehand by
+     * {@link #ensureCapacityForRegistration}; this only records the result. If
+     * ETX returned a device ID that is already tracked as active, that row is
+     * updated rather than duplicated.
      */
     @Transactional
     public void logRegistration(RegistrationResponse registrationResponse, RegistrationClientType clientType,
@@ -50,50 +75,40 @@ public class RegistrationLogService {
             String vendorId,
             String requestedBy) {
         try {
-            // Get default limits from configuration as fallback
-            int defaultUserLimit = getDefaultUserLimitFromConfig(vendorId);
-            int defaultVendorLimit = getDefaultVendorLimitFromConfig(vendorId);
+            String deviceId = registrationResponse.getDeviceId();
+            Instant now = Instant.now();
+            Instant expiresAt = parseExpirationTime(registrationResponse.getCertificate() != null
+                    ? registrationResponse.getCertificate().getExpirationTime()
+                    : null);
+            Long userCount = registrationLogRepository.countActiveRegistrationsByUserAndVendor(requestedBy, vendorId);
 
-            // Check user limits first - get actual user limit from database
-            UserLimits userLimits = userLimitsService.getUserLimits(requestedBy, vendorId, defaultUserLimit);
-            Long userCount = registrationLogRepository.countActiveRegistrationsByUser(requestedBy);
-            int userLimit = userLimits.getMaxRegistrations();
-            if (userCount >= userLimit) {
-                log.warn("User {} has reached maximum registrations ({}), cleaning up oldest", requestedBy, userLimit);
-                cleanupOldRegistrations(requestedBy);
-                userCount = registrationLogRepository.countActiveRegistrationsByUser(requestedBy);
+            List<RegistrationLog> existing = registrationLogRepository.findByDeviceIds(List.of(deviceId));
+            RegistrationLog logEntry;
+            if (!existing.isEmpty()) {
+                logEntry = existing.get(0);
+                log.info("Device {} is already tracked as active, updating existing registration log", deviceId);
+            } else {
+                logEntry = new RegistrationLog();
+                logEntry.setDeviceId(deviceId);
+                logEntry.setCreatedAt(now);
+                logEntry.setRegistrationCount(userCount.intValue() + 1);
+                logEntry.setIsActive(true);
             }
-
-            // Check vendor limits - get actual vendor limit from database
-            VendorLimits vendorLimits = vendorLimitsService.getVendorLimits(vendorId, defaultVendorLimit);
-            Long vendorCount = registrationLogRepository.countTotalActiveRegistrationsByVendor(vendorId);
-            int vendorLimit = vendorLimits.getMaxRegistrations();
-
-            if (vendorCount >= vendorLimit) {
-                log.warn("Vendor {} has reached registration limit ({}), cleaning up oldest", vendorId, vendorLimit);
-                cleanupOldRegistrationsByVendor(vendorId);
-            }
-
-            // Create and save registration log
-            RegistrationLog logEntry = new RegistrationLog();
-            logEntry.setDeviceId(registrationResponse.getDeviceId());
             logEntry.setClientType(clientType);
             logEntry.setClientSubtype(clientSubtype);
             logEntry.setVendorId(vendorId);
             logEntry.setRequestedBy(requestedBy);
-            logEntry.setRegistrationCount(userCount.intValue() + 1);
-            logEntry.setCreatedAt(Instant.now());
-            logEntry.setExpiresAt(parseExpirationTime(registrationResponse.getCertificate().getExpirationTime()));
-            logEntry.setIsActive(true);
-            // Set initial lastConnected timestamp to creation time
-            logEntry.setLastConnected(Instant.now());
+            logEntry.setExpiresAt(expiresAt);
+            // Set initial lastConnected timestamp to registration time
+            logEntry.setLastConnected(now);
 
             registrationLogRepository.save(logEntry);
+            registrationEventService.record(RegistrationEventType.REGISTER, deviceId, vendorId, requestedBy,
+                    existing.isEmpty() ? "new registration" : "re-registration of tracked device", null,
+                    "expiresAt=" + expiresAt);
 
-            log.info(
-                    "Logged registration for user: {}, device: {}, type: {}, vendor: {}, userCount: {}, vendorCount: {}",
-                    requestedBy, registrationResponse.getDeviceId(), clientType, vendorId, userCount + 1,
-                    vendorCount + 1);
+            log.info("Logged registration for user: {}, device: {}, type: {}, vendor: {}, userCount: {}",
+                    requestedBy, deviceId, clientType, vendorId, existing.isEmpty() ? userCount + 1 : userCount);
 
         } catch (Exception e) {
             log.error("Failed to log registration: {}", e.getMessage(), e);
@@ -101,66 +116,64 @@ public class RegistrationLogService {
     }
 
     /**
-     * Clean up old registrations when count exceeds limit
+     * Record a successful registration update (PUT). Refreshes the expiration
+     * and last connected timestamps of the tracked device without touching
+     * capacity, since an update does not add a registration.
      */
     @Transactional
-    public List<String> cleanupOldRegistrations(String requestedBy) {
+    public void logRegistrationUpdate(RegistrationResponse registrationResponse, String deviceId, String vendorId,
+            String requestedBy) {
+        try {
+            String responseDeviceId = registrationResponse.getDeviceId() != null ? registrationResponse.getDeviceId()
+                    : deviceId;
+            Instant expiresAt = registrationResponse.getCertificate() != null
+                    ? parseExpirationTime(registrationResponse.getCertificate().getExpirationTime())
+                    : null;
+
+            List<RegistrationLog> existing = registrationLogRepository.findByDeviceIds(List.of(responseDeviceId));
+            if (existing.isEmpty()) {
+                log.warn("Registration update for device {} which is not tracked locally", responseDeviceId);
+            } else {
+                Instant now = Instant.now();
+                existing.forEach(entry -> {
+                    if (expiresAt != null) {
+                        entry.setExpiresAt(expiresAt);
+                    }
+                    entry.setLastConnected(now);
+                });
+                registrationLogRepository.saveAll(existing);
+            }
+            registrationEventService.record(RegistrationEventType.PUT, responseDeviceId, vendorId, requestedBy,
+                    existing.isEmpty() ? "device not tracked locally" : "registration renewed", null,
+                    "expiresAt=" + expiresAt);
+        } catch (Exception e) {
+            log.error("Failed to log registration update for device {}: {}", deviceId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Clean up a user's oldest registrations under a vendor so one new
+     * registration fits within the user's limit
+     */
+    @Transactional
+    public List<String> cleanupOldRegistrations(String requestedBy, String vendorId) {
         try {
             List<RegistrationLog> oldestRegistrations = registrationLogRepository
-                    .findOldestRegistrationsByUser(requestedBy);
+                    .findOldestRegistrationsByUserAndVendor(requestedBy, vendorId);
 
-            // Get the user's vendor to determine the correct user limit
-            String vendorId = oldestRegistrations.isEmpty() ? null : oldestRegistrations.get(0).getVendorId();
-
-            // Get actual user limit from database
             int defaultUserLimit = getDefaultUserLimitFromConfig(vendorId);
             UserLimits userLimits = userLimitsService.getUserLimits(requestedBy, vendorId, defaultUserLimit);
             int userLimit = userLimits.getMaxRegistrations();
 
-            // Remove oldest registrations to keep count under limit
+            // Remove oldest registrations to leave room for one more under the limit
             int registrationsToRemove = oldestRegistrations.size() - userLimit + 1;
-            if (registrationsToRemove > 0) {
-                List<RegistrationLog> toRemove = oldestRegistrations.subList(0, registrationsToRemove);
-                List<String> deviceIds = toRemove.stream()
-                        .map(RegistrationLog::getDeviceId)
-                        .collect(Collectors.toList());
-
-                // Call ETX API to delete registrations first
-                if (!deviceIds.isEmpty()) {
-                    try {
-                        // Get vendorId from the first registration to delete
-                        String registrationVendorId = toRemove.isEmpty() ? null : toRemove.get(0).getVendorId();
-
-                        // Make the ETX API call synchronous
-                        registrationApi.deleteRegistrations(deviceIds, registrationVendorId).block();
-
-                        // Only mark as inactive if successfully deleted from ETX
-                        toRemove.forEach(log -> {
-                            log.setIsActive(false);
-                            log.setUnregisterAt(Instant.now());
-                        });
-                        registrationLogRepository.saveAll(toRemove);
-                        log.info("Successfully deleted {} user registrations from ETX and marked as inactive",
-                                deviceIds.size());
-                        return deviceIds;
-                    } catch (Exception e) {
-                        log.error("Failed to delete user registrations from ETX: {}", e.getMessage());
-                        // Return empty list since ETX deletion failed
-                        return new ArrayList<>();
-                    }
-                } else {
-                    // If no device IDs, just mark as inactive
-                    toRemove.forEach(log -> {
-                        log.setIsActive(false);
-                        log.setUnregisterAt(Instant.now());
-                    });
-                    registrationLogRepository.saveAll(toRemove);
-                    log.info("Marked {} old registrations as inactive for user: {}", registrationsToRemove,
-                            requestedBy);
-                    return new ArrayList<>();
-                }
+            if (registrationsToRemove <= 0) {
+                return new ArrayList<>();
             }
-            return new ArrayList<>();
+            List<RegistrationLog> toRemove = oldestRegistrations.subList(0, registrationsToRemove);
+            String reason = String.format("user %s at limit %d (active %d)", requestedBy, userLimit,
+                    oldestRegistrations.size());
+            return evict(toRemove, vendorId, RegistrationEventType.EVICT_USER_LIMIT, reason);
 
         } catch (Exception e) {
             log.error("Failed to cleanup old registrations for user {}: {}", requestedBy, e.getMessage(), e);
@@ -180,6 +193,13 @@ public class RegistrationLogService {
      */
     public Long getRegistrationCount(String requestedBy) {
         return registrationLogRepository.countActiveRegistrationsByUser(requestedBy);
+    }
+
+    /**
+     * Get registration count for a user under a specific vendor
+     */
+    public Long getRegistrationCount(String requestedBy, String vendorId) {
+        return registrationLogRepository.countActiveRegistrationsByUserAndVendor(requestedBy, vendorId);
     }
 
     /**
@@ -218,9 +238,20 @@ public class RegistrationLogService {
      * - User limits: How many registrations this specific user can have
      * - Vendor limits: How many total registrations this vendor can have across all
      * users
+     * Local tracking is first reconciled against ETX so that registrations ETX
+     * no longer holds do not count against the limits.
      */
     @Transactional
     public void ensureCapacityForRegistration(String vendorId, String requestedBy) {
+        if (cleanupConfig().isReconcileOnRegister()) {
+            try {
+                reconcileWithEtx(vendorId);
+            } catch (Exception e) {
+                log.warn("Failed to reconcile registrations with ETX for vendor {}, using local counts: {}",
+                        vendorId, e.getMessage());
+            }
+        }
+
         try {
             // Get default limits from configuration as fallback
             int defaultUserLimit = getDefaultUserLimitFromConfig(vendorId);
@@ -229,12 +260,12 @@ public class RegistrationLogService {
             // Check USER limits (how many registrations this specific user can have)
             // This gets the actual limit from the database, using config as fallback
             UserLimits userLimits = userLimitsService.getUserLimits(requestedBy, vendorId, defaultUserLimit);
-            Long userCount = getRegistrationCount(requestedBy);
+            Long userCount = getRegistrationCount(requestedBy, vendorId);
             int userLimit = userLimits.getMaxRegistrations();
             if (userCount >= userLimit) {
                 log.info("User {} has reached their personal limit ({}), cleaning up their oldest registrations",
                         requestedBy, userLimit);
-                cleanupOldRegistrations(requestedBy);
+                cleanupOldRegistrations(requestedBy, vendorId);
             }
 
             // Check VENDOR limits (how many total registrations this vendor can have across
@@ -255,64 +286,87 @@ public class RegistrationLogService {
     }
 
     /**
-     * Clean up expired registrations
+     * Clean up expired registrations. Each expired row is first checked against
+     * ETX: a certificate that ETX reports as renewed only refreshes the local
+     * expiration, a device ETX no longer knows is marked inactive, and the rest
+     * are deleted from ETX before being marked inactive.
      */
     @Transactional
     public List<String> cleanupExpiredRegistrations() {
+        List<String> removed = new ArrayList<>();
         try {
-            List<RegistrationLog> expiredRegistrations = registrationLogRepository
-                    .findExpiredRegistrations(Instant.now());
-
-            if (!expiredRegistrations.isEmpty()) {
-                List<String> deviceIds = expiredRegistrations.stream()
-                        .map(RegistrationLog::getDeviceId)
-                        .collect(Collectors.toList());
-
-                // Mark as inactive and set unregister timestamp
-                expiredRegistrations.forEach(log -> {
-                    log.setIsActive(false);
-                    log.setUnregisterAt(Instant.now());
-                });
-                registrationLogRepository.saveAll(expiredRegistrations);
-
-                log.info("Marked {} expired registrations as inactive", expiredRegistrations.size());
-
-                // Call ETX API to delete registrations
-                if (!deviceIds.isEmpty()) {
-                    try {
-                        // Group registrations by vendorId and delete each group separately
-                        expiredRegistrations.stream()
-                                .collect(Collectors.groupingBy(RegistrationLog::getVendorId))
-                                .forEach((vendorId, vendorRegistrations) -> {
-                                    List<String> vendorDeviceIds = vendorRegistrations.stream()
-                                            .map(RegistrationLog::getDeviceId)
-                                            .collect(Collectors.toList());
-
-                                    try {
-                                        registrationApi.deleteRegistrations(vendorDeviceIds, vendorId).block();
-                                        log.info("Successfully deleted {} expired registrations from ETX for vendor {}",
-                                                vendorDeviceIds.size(), vendorId);
-                                    } catch (Exception e) {
-                                        log.error("Failed to delete expired registrations from ETX for vendor {}: {}",
-                                                vendorId, e.getMessage());
-                                    }
-                                });
-                    } catch (Exception e) {
-                        log.error("Error calling ETX API to delete expired registrations: {}", e.getMessage(), e);
-                    }
-                }
-                return deviceIds;
+            Instant now = Instant.now();
+            List<RegistrationLog> expiredRegistrations = registrationLogRepository.findExpiredRegistrations(now);
+            if (expiredRegistrations.isEmpty()) {
+                return removed;
             }
-            return new ArrayList<>();
+
+            expiredRegistrations.stream()
+                    .collect(Collectors.groupingBy(RegistrationLog::getVendorId))
+                    .forEach((vendorId, vendorRegistrations) -> removed
+                            .addAll(cleanupExpiredForVendor(vendorId, vendorRegistrations, now)));
+            return removed;
 
         } catch (Exception e) {
             log.error("Failed to cleanup expired registrations: {}", e.getMessage(), e);
-            return new ArrayList<>();
+            return removed;
         }
     }
 
+    private List<String> cleanupExpiredForVendor(String vendorId, List<RegistrationLog> registrations,
+            Instant now) {
+        List<RegistrationLog> renewed = new ArrayList<>();
+        List<RegistrationLog> goneFromEtx = new ArrayList<>();
+        List<RegistrationLog> toDelete = new ArrayList<>();
+
+        for (RegistrationLog registration : registrations) {
+            try {
+                RegistrationCheckResponse etx = registrationApi
+                        .checkRegistration(registration.getDeviceId(), vendorId)
+                        .block(ETX_TIMEOUT);
+                Instant etxExpiry = etx != null && etx.getCertificate() != null
+                        ? parseExpirationTimeOrNull(etx.getCertificate().getExpirationTime())
+                        : null;
+                if (etxExpiry != null && etxExpiry.isAfter(now)) {
+                    registration.setExpiresAt(etxExpiry);
+                    renewed.add(registration);
+                } else {
+                    toDelete.add(registration);
+                }
+            } catch (ErrorResponseException e) {
+                if (e.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                    goneFromEtx.add(registration);
+                } else {
+                    log.warn("Could not verify expired device {} with ETX, will retry next run: {}",
+                            registration.getDeviceId(), e.getMessage());
+                }
+            } catch (Exception e) {
+                log.warn("Could not verify expired device {} with ETX, will retry next run: {}",
+                        registration.getDeviceId(), e.getMessage());
+            }
+        }
+
+        if (!renewed.isEmpty()) {
+            registrationLogRepository.saveAll(renewed);
+            log.info("Refreshed expiration for {} renewed registrations for vendor {}", renewed.size(), vendorId);
+        }
+
+        List<String> removed = new ArrayList<>();
+        if (!goneFromEtx.isEmpty()) {
+            markInactive(goneFromEtx);
+            registrationEventService.recordForRegistrations(RegistrationEventType.EXPIRE, goneFromEtx,
+                    "expired and no longer registered in ETX", HttpStatus.NOT_FOUND.value());
+            goneFromEtx.forEach(r -> removed.add(r.getDeviceId()));
+        }
+        if (!toDelete.isEmpty()) {
+            removed.addAll(evict(toDelete, vendorId, RegistrationEventType.EXPIRE, "certificate expired"));
+        }
+        return removed;
+    }
+
     /**
-     * Clean up old registrations for a vendor
+     * Clean up a vendor's oldest registrations so one new registration fits
+     * within the vendor limit
      */
     @Transactional
     public List<String> cleanupOldRegistrationsByVendor(String vendorId) {
@@ -320,47 +374,19 @@ public class RegistrationLogService {
             List<RegistrationLog> oldestRegistrations = registrationLogRepository
                     .findOldestTotalRegistrationsByVendor(vendorId);
 
-            // Remove oldest registrations to keep count under limit
-            int registrationsToRemove = oldestRegistrations.size();
-            if (registrationsToRemove > 0) {
-                List<RegistrationLog> toRemove = oldestRegistrations.subList(0, registrationsToRemove);
-                List<String> deviceIds = toRemove.stream()
-                        .map(RegistrationLog::getDeviceId)
-                        .collect(Collectors.toList());
+            int defaultVendorLimit = getDefaultVendorLimitFromConfig(vendorId);
+            VendorLimits vendorLimits = vendorLimitsService.getVendorLimits(vendorId, defaultVendorLimit);
+            int vendorLimit = vendorLimits.getMaxRegistrations();
 
-                // Call ETX API to delete registrations first, then mark as inactive
-                if (!deviceIds.isEmpty()) {
-                    try {
-                        // Make the ETX API call synchronous
-                        registrationApi.deleteRegistrations(deviceIds, vendorId).block();
-
-                        // Only mark as inactive if successfully deleted from ETX
-                        toRemove.forEach(log -> {
-                            log.setIsActive(false);
-                            log.setUnregisterAt(Instant.now());
-                        });
-                        registrationLogRepository.saveAll(toRemove);
-                        log.info("Successfully deleted {} registrations from ETX for vendor {} and marked as inactive",
-                                deviceIds.size(), vendorId);
-                        return deviceIds;
-                    } catch (Exception e) {
-                        log.error("Failed to delete registrations from ETX for vendor {}: {}", vendorId,
-                                e.getMessage());
-                        // Return empty list since ETX deletion failed
-                        return new ArrayList<>();
-                    }
-                } else {
-                    // If no device IDs, just mark as inactive
-                    toRemove.forEach(log -> {
-                        log.setIsActive(false);
-                        log.setUnregisterAt(Instant.now());
-                    });
-                    registrationLogRepository.saveAll(toRemove);
-                    log.info("Marked {} old registrations as inactive for vendor: {}", registrationsToRemove, vendorId);
-                    return new ArrayList<>();
-                }
+            // Remove oldest registrations to leave room for one more under the limit
+            int registrationsToRemove = oldestRegistrations.size() - vendorLimit + 1;
+            if (registrationsToRemove <= 0) {
+                return new ArrayList<>();
             }
-            return new ArrayList<>();
+            List<RegistrationLog> toRemove = oldestRegistrations.subList(0, registrationsToRemove);
+            String reason = String.format("vendor %s at limit %d (active %d)", vendorId, vendorLimit,
+                    oldestRegistrations.size());
+            return evict(toRemove, vendorId, RegistrationEventType.EVICT_VENDOR_LIMIT, reason);
 
         } catch (Exception e) {
             log.error("Failed to cleanup old registrations for vendor {}: {}", vendorId, e.getMessage(), e);
@@ -369,39 +395,204 @@ public class RegistrationLogService {
     }
 
     /**
+     * Reconcile local tracking against the clients ETX reports for a vendor.
+     * Local rows ETX no longer holds are marked inactive; ETX clients with no
+     * local row are reported (once each) but never deleted, since they may have
+     * been registered by another tool. Throws if ETX cannot be queried.
+     */
+    @Transactional
+    public ReconcileResult reconcileWithEtx(String vendorId) {
+        List<EtxClientRecord> etxClients = registrationApi.queryActiveClients(vendorId).block(ETX_TIMEOUT);
+        if (etxClients == null) {
+            etxClients = List.of();
+        }
+        Set<String> etxIds = etxClients.stream()
+                .map(EtxClientRecord::getDeviceId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<RegistrationLog> localActive = registrationLogRepository.findActiveByVendor(vendorId);
+        Set<String> localIds = localActive.stream()
+                .map(RegistrationLog::getDeviceId)
+                .collect(Collectors.toSet());
+
+        Instant graceCutoff = Instant.now().minus(cleanupConfig().getReconcileGracePeriod());
+        List<RegistrationLog> missing = localActive.stream()
+                .filter(r -> !etxIds.contains(r.getDeviceId()))
+                .filter(r -> r.getCreatedAt() == null || r.getCreatedAt().isBefore(graceCutoff))
+                .toList();
+
+        ReconcileResult result = new ReconcileResult();
+        result.setVendorId(vendorId);
+        result.setEtxCount(etxIds.size());
+
+        if (!missing.isEmpty()) {
+            markInactive(missing);
+            registrationEventService.recordForRegistrations(RegistrationEventType.RECONCILED_MISSING, missing,
+                    "no longer reported by ETX client query", null);
+            missing.forEach(r -> result.getDeactivated().add(r.getDeviceId()));
+            log.warn("Reconcile vendor {}: marked {} local registrations inactive that ETX no longer reports",
+                    vendorId, missing.size());
+        }
+
+        etxIds.stream()
+                .filter(id -> !localIds.contains(id))
+                .sorted()
+                .forEach(id -> {
+                    result.getUntrackedInEtx().add(id);
+                    if (!registrationEventService.hasEvent(id, RegistrationEventType.UNTRACKED_IN_ETX)) {
+                        registrationEventService.record(RegistrationEventType.UNTRACKED_IN_ETX, id, vendorId, null,
+                                "registered in ETX with no active local registration log");
+                    }
+                });
+        if (!result.getUntrackedInEtx().isEmpty()) {
+            log.warn("Reconcile vendor {}: {} ETX registrations are not tracked locally", vendorId,
+                    result.getUntrackedInEtx().size());
+        }
+        return result;
+    }
+
+    /**
+     * Active registrations for a vendor as reported by ETX, merged with local
+     * tracking data
+     */
+    public Mono<ActiveRegistrationsResponse> getActiveRegistrationsView(String vendorId) {
+        return registrationApi.queryActiveClients(vendorId)
+                // The local lookup is a blocking JDBC call; keep it off the HTTP client thread
+                .publishOn(Schedulers.boundedElastic())
+                .map(etxClients -> buildActiveRegistrationsView(vendorId, etxClients,
+                        registrationLogRepository.findActiveByVendor(vendorId)));
+    }
+
+    static ActiveRegistrationsResponse buildActiveRegistrationsView(String vendorId,
+            List<EtxClientRecord> etxClients, List<RegistrationLog> localActive) {
+        Map<String, RegistrationLog> localById = localActive.stream()
+                .collect(Collectors.toMap(RegistrationLog::getDeviceId, Function.identity(), (a, b) -> a));
+
+        ActiveRegistrationsResponse response = new ActiveRegistrationsResponse();
+        response.setVendorId(vendorId);
+        response.setEtxCount(etxClients.size());
+        response.setLocalActiveCount(localById.size());
+
+        for (EtxClientRecord client : etxClients) {
+            ActiveRegistrationView view = new ActiveRegistrationView();
+            view.setDeviceId(client.getDeviceId());
+            view.setClientType(client.getClientType());
+            view.setClientSubtype(client.getClientSubtype());
+            view.setMecIds(client.getMecIds());
+
+            RegistrationLog local = localById.get(client.getDeviceId());
+            view.setTrackedLocally(local != null);
+            if (local != null) {
+                view.setRequestedBy(local.getRequestedBy());
+                view.setCreatedAt(local.getCreatedAt());
+                view.setExpiresAt(local.getExpiresAt());
+                view.setLastConnected(local.getLastConnected());
+            } else {
+                response.getUntrackedInEtx().add(client.getDeviceId());
+            }
+            response.getItems().add(view);
+        }
+
+        Set<String> etxIds = etxClients.stream().map(EtxClientRecord::getDeviceId).collect(Collectors.toSet());
+        localById.keySet().stream()
+                .filter(id -> !etxIds.contains(id))
+                .sorted()
+                .forEach(response.getStaleLocal()::add);
+        return response;
+    }
+
+    /**
+     * Delete registrations from ETX, then mark them inactive locally. The event
+     * is recorded before the delete so the intent is captured even if the call
+     * hangs; a failed delete is recorded and leaves the rows active.
+     */
+    private List<String> evict(List<RegistrationLog> toRemove, String vendorId, RegistrationEventType eventType,
+            String reason) {
+        List<String> deviceIds = toRemove.stream()
+                .map(RegistrationLog::getDeviceId)
+                .collect(Collectors.toList());
+        if (deviceIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        registrationEventService.recordForRegistrations(eventType, toRemove, reason, null);
+        try {
+            registrationApi.deleteRegistrations(deviceIds, vendorId).block(ETX_TIMEOUT);
+        } catch (Exception e) {
+            log.error("Failed to delete {} registrations from ETX for vendor {}: {}", deviceIds.size(), vendorId,
+                    e.getMessage());
+            registrationEventService.recordForRegistrations(RegistrationEventType.DELETE_FAILED, toRemove,
+                    eventType + ": " + e.getMessage(), RegistrationEventService.etxStatusOf(e));
+            return new ArrayList<>();
+        }
+
+        // Only mark as inactive once successfully deleted from ETX
+        markInactive(toRemove);
+        log.info("Deleted {} registrations from ETX for vendor {} ({}): {}", deviceIds.size(), vendorId, reason,
+                deviceIds);
+        return deviceIds;
+    }
+
+    private void markInactive(List<RegistrationLog> registrations) {
+        Instant now = Instant.now();
+        registrations.forEach(r -> {
+            r.setIsActive(false);
+            r.setUnregisterAt(now);
+        });
+        registrationLogRepository.saveAll(registrations);
+    }
+
+    private EtxProperties.RegistrationCleanup cleanupConfig() {
+        EtxProperties.RegistrationLimits registration = etxProperties.getRegistration();
+        if (registration == null || registration.getCleanup() == null) {
+            return new EtxProperties.RegistrationCleanup();
+        }
+        return registration.getCleanup();
+    }
+
+    /**
      * Get the default vendor limit from configuration
      */
     private int getDefaultVendorLimitFromConfig(String vendorId) {
-        if (etxProperties.getRegistration().getVendors() != null) {
-            return etxProperties.getRegistration().getVendors().stream()
-                    .filter(vendor -> vendorId.equals(vendor.getId()))
-                    .map(EtxProperties.VendorConfig::getLimit)
-                    .findFirst()
-                    .orElse(50); // Default limit if vendor not found
-        }
-        return 50; // Default limit if no vendors configured
+        return findVendorConfig(vendorId)
+                .map(EtxProperties.VendorConfig::getLimit)
+                .orElse(50); // Default limit if vendor not found
     }
 
     /**
      * Get the default user limit from configuration
      */
     private int getDefaultUserLimitFromConfig(String vendorId) {
-        if (etxProperties.getRegistration().getVendors() != null) {
-            return etxProperties.getRegistration().getVendors().stream()
-                    .filter(vendor -> vendorId.equals(vendor.getId()))
-                    .map(EtxProperties.VendorConfig::getUserLimit)
-                    .findFirst()
-                    .orElse(5); // Default user limit if vendor not found
+        return findVendorConfig(vendorId)
+                .map(EtxProperties.VendorConfig::getUserLimit)
+                .orElse(5); // Default user limit if vendor not found
+    }
+
+    private Optional<EtxProperties.VendorConfig> findVendorConfig(String vendorId) {
+        if (vendorId == null || etxProperties.getRegistration() == null
+                || etxProperties.getRegistration().getVendors() == null) {
+            return Optional.empty();
         }
-        return 5; // Default user limit if no vendors configured
+        return etxProperties.getRegistration().getVendors().stream()
+                .filter(vendor -> vendorId.equals(vendor.getId()))
+                .findFirst();
     }
 
     private Instant parseExpirationTime(String expirationTime) {
-        try {
-            return Instant.parse(expirationTime);
-        } catch (Exception e) {
+        Instant parsed = parseExpirationTimeOrNull(expirationTime);
+        if (parsed == null) {
             log.warn("Failed to parse expiration time: {}, using default", expirationTime);
             return Instant.now().plus(24, java.time.temporal.ChronoUnit.HOURS);
+        }
+        return parsed;
+    }
+
+    private Instant parseExpirationTimeOrNull(String expirationTime) {
+        try {
+            return expirationTime != null ? Instant.parse(expirationTime) : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 }

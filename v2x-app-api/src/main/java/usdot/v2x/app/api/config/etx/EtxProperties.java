@@ -28,6 +28,20 @@ public class EtxProperties {
     @Data
     public static class RegistrationLimits {
         private List<VendorConfig> vendors;
+        private RegistrationCleanup cleanup = new RegistrationCleanup();
+    }
+
+    @Data
+    public static class RegistrationCleanup {
+        /** Run the scheduled expired-registration cleanup and ETX reconciliation. */
+        private boolean enabled = true;
+        /** Reconcile registration_logs against ETX before each capacity check. */
+        private boolean reconcileOnRegister = true;
+        /**
+         * Local rows younger than this are never marked missing during
+         * reconciliation, to tolerate ETX propagation delay.
+         */
+        private Duration reconcileGracePeriod = Duration.ofMinutes(2);
     }
 
     @Data

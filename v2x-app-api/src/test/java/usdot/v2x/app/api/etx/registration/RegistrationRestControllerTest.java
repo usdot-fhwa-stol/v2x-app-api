@@ -1,6 +1,8 @@
 package usdot.v2x.app.api.etx.registration;
 
 import usdot.v2x.app.api.models.etx.registration.*;
+import usdot.v2x.app.api.models.etx.ErrorResponseException;
+import usdot.v2x.app.api.services.RegistrationEventService;
 import usdot.v2x.app.api.services.RegistrationLogService;
 import usdot.v2x.app.api.utils.SecurityContextUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +37,9 @@ class RegistrationRestControllerTest {
     private SecurityContextUtils securityContextUtils;
 
     @Mock
+    private RegistrationEventService registrationEventService;
+
+    @Mock
     private Authentication authentication;
 
     @Mock
@@ -58,6 +63,10 @@ class RegistrationRestControllerTest {
             var securityContextUtilsField = RegistrationRestController.class.getDeclaredField("securityContextUtils");
             securityContextUtilsField.setAccessible(true);
             securityContextUtilsField.set(controller, securityContextUtils);
+
+            var eventServiceField = RegistrationRestController.class.getDeclaredField("registrationEventService");
+            eventServiceField.setAccessible(true);
+            eventServiceField.set(controller, registrationEventService);
         } catch (Exception e) {
             throw new RuntimeException("Failed to inject services", e);
         }
@@ -127,12 +136,125 @@ class RegistrationRestControllerTest {
                 .thenReturn(reactor.core.publisher.Mono.just(expectedResponse));
 
         // Act
-        reactor.core.publisher.Mono<RegistrationResponse> result = controller.putRegistration(
-                true, 5, 15, request);
+        StepVerifier.create(controller.putRegistration(true, 5, 15, request))
+                .expectNext(expectedResponse)
+                .verifyComplete();
 
         // Assert
-        assertNotNull(result);
         verify(registrationApi).clientRegistrationPutRetryPending(request, 5, 15);
+        verify(registrationLogService).logRegistrationUpdate(expectedResponse, "test-device-id", "test-vendor-id",
+                "testuser");
+        // An update must never evict other registrations
+        verify(registrationLogService, never()).ensureCapacityForRegistration(anyString(), anyString());
+    }
+
+    @Test
+    void testPostRegistration_FailureRecordsEvent() {
+        RegistrationPostRequest request = new RegistrationPostRequest();
+        request.setClientType(RegistrationClientType.Vehicle);
+        request.setClientSubtype(RegistrationClientSubType.PassengerCar);
+        RuntimeException error = new RuntimeException("ETX error");
+        when(registrationApi.clientRegistrationRetryPending(any(RegistrationPostRequest.class), anyInt(), anyInt()))
+                .thenReturn(reactor.core.publisher.Mono.error(error));
+
+        StepVerifier.create(controller.postRegistration(request, true, 5, 15))
+                .expectError(RuntimeException.class)
+                .verify();
+
+        verify(registrationLogService).ensureCapacityForRegistration("test-vendor-id", "testuser");
+        verify(registrationEventService).recordFailure(RegistrationEventType.REGISTER_FAILED, null,
+                "test-vendor-id", "testuser", error);
+    }
+
+    @Test
+    void testPostConnection_RecordsConnectEvent() {
+        ConnectionPostRequest request = new ConnectionPostRequest();
+        request.setDeviceId("test-device-id");
+        request.setLat(40.7128);
+        request.setLon(-74.0060);
+        ConnectionResponse connectionResponse = new ConnectionResponse();
+        connectionResponse.setMqttUrl("mqtts://broker:8883");
+        when(registrationApi.clientConnectionPost(any(ConnectionPostRequest.class)))
+                .thenReturn(reactor.core.publisher.Mono.just(connectionResponse));
+
+        StepVerifier.create(controller.postConnection(request))
+                .expectNext(connectionResponse)
+                .verifyComplete();
+
+        verify(registrationLogService).updateLastConnected("test-device-id");
+        verify(registrationEventService).record(eq(RegistrationEventType.CONNECT), eq("test-device-id"),
+                eq("test-vendor-id"), eq("testuser"), anyString(), isNull(), eq("mqttUrl=mqtts://broker:8883"));
+    }
+
+    @Test
+    void testGetActiveRegistrations_DefaultsToCallerVendor() {
+        ActiveRegistrationsResponse expected = new ActiveRegistrationsResponse();
+        when(registrationLogService.getActiveRegistrationsView("test-vendor-id"))
+                .thenReturn(reactor.core.publisher.Mono.just(expected));
+
+        StepVerifier.create(controller.getActiveRegistrations(null))
+                .expectNext(expected)
+                .verifyComplete();
+    }
+
+    @Test
+    void testGetActiveRegistrations_NonAdminCannotQueryOtherVendor() {
+        when(securityContextUtils.isAdmin()).thenReturn(false);
+
+        StepVerifier.create(controller.getActiveRegistrations("other-vendor"))
+                .expectErrorMatches(e -> e instanceof ErrorResponseException ere
+                        && ere.getStatusCode().equals(HttpStatus.FORBIDDEN))
+                .verify();
+        verify(registrationLogService, never()).getActiveRegistrationsView(anyString());
+    }
+
+    @Test
+    void testGetActiveRegistrations_AdminCanQueryOtherVendor() {
+        ActiveRegistrationsResponse expected = new ActiveRegistrationsResponse();
+        when(securityContextUtils.isAdmin()).thenReturn(true);
+        when(registrationLogService.getActiveRegistrationsView("other-vendor"))
+                .thenReturn(reactor.core.publisher.Mono.just(expected));
+
+        StepVerifier.create(controller.getActiveRegistrations("other-vendor"))
+                .expectNext(expected)
+                .verifyComplete();
+    }
+
+    @Test
+    void testReconcileRegistrations_Success() {
+        ReconcileResult expected = new ReconcileResult();
+        when(registrationLogService.reconcileWithEtx("test-vendor-id")).thenReturn(expected);
+
+        ResponseEntity<ReconcileResult> result = controller.reconcileRegistrations(null);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertSame(expected, result.getBody());
+    }
+
+    @Test
+    void testReconcileRegistrations_EtxFailure() {
+        when(registrationLogService.reconcileWithEtx("test-vendor-id")).thenThrow(new RuntimeException("down"));
+
+        ResponseEntity<ReconcileResult> result = controller.reconcileRegistrations(null);
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, result.getStatusCode());
+    }
+
+    @Test
+    void testGetRegistrationEvents_DefaultWindowAndBoundedLimit() {
+        List<RegistrationEvent> expected = List.of(new RegistrationEvent());
+        when(registrationEventService.findEvents(eq("dev"), isNull(), any(java.time.Instant.class),
+                any(java.time.Instant.class), eq(5000))).thenReturn(expected);
+
+        List<RegistrationEvent> result = controller.getRegistrationEvents("dev", null, null, null, 100000);
+
+        assertEquals(expected, result);
+        var fromCaptor = org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
+        var toCaptor = org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
+        verify(registrationEventService).findEvents(eq("dev"), isNull(), fromCaptor.capture(), toCaptor.capture(),
+                eq(5000));
+        assertEquals(java.time.Duration.ofHours(24),
+                java.time.Duration.between(fromCaptor.getValue(), toCaptor.getValue()));
     }
 
     @Test

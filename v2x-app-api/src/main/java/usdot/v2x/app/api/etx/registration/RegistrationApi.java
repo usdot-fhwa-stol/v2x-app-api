@@ -9,6 +9,7 @@ import usdot.v2x.app.api.models.etx.registration.*;
 import usdot.v2x.app.api.utils.SecurityContextUtils;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -178,6 +179,34 @@ public class RegistrationApi {
                         }
                     });
         });
+    }
+
+    /**
+     * Query all clients currently registered in ETX for a vendor
+     */
+    public Mono<List<EtxClientRecord>> queryActiveClients(String vendorId) {
+        return tokenService.getTokenStore().flatMap(tokenStore -> webClient.post()
+                .uri("/api/v1/clients/query")
+                .headers(headers -> {
+                    headers.set("Authorization", "Bearer " + tokenStore.getAccessToken());
+                    headers.set("SessionToken", tokenStore.getSessionToken());
+                    headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+                    headers.set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+                })
+                .bodyValue(new ClientQueryRequest(vendorId))
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is2xxSuccessful()) {
+                        return response.bodyToMono(new ParameterizedTypeReference<List<EtxClientRecord>>() {
+                        }).defaultIfEmpty(List.of());
+                    }
+                    log.warn("Failed to query active clients for vendor {}, status: {}", vendorId,
+                            response.statusCode());
+                    return response.bodyToMono(ErrorResponse.class)
+                            .defaultIfEmpty(new ErrorResponse("Client query failed",
+                                    "ETX returned " + response.statusCode()))
+                            .flatMap(errorResponse -> Mono
+                                    .error(new ErrorResponseException(errorResponse, response.statusCode())));
+                }));
     }
 
     /**

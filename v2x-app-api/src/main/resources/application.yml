@@ -16,6 +16,12 @@ etx:
       - id: ${ETX_DEPOSITOR_VENDOR_ID:${ETX_VENDOR_ID}}
         limit: ${ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT:10}
         user-limit: ${ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT:3}
+    cleanup:
+      enabled: ${ETX_REGISTRATION_CLEANUP_ENABLED:true}
+      interval: ${ETX_REGISTRATION_CLEANUP_INTERVAL:5m}
+      initial-delay: ${ETX_REGISTRATION_CLEANUP_INITIAL_DELAY:1m}
+      reconcile-on-register: ${ETX_REGISTRATION_RECONCILE_ON_REGISTER:true}
+      reconcile-grace-period: ${ETX_REGISTRATION_RECONCILE_GRACE_PERIOD:2m}
   configuration:
     distribution-type: ${ETX_CONFIGURATION_DISTRIBUTION_TYPE:Targeted}
     cleanup:

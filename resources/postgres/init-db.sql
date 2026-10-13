@@ -76,6 +76,26 @@ CREATE INDEX IF NOT EXISTS idx_registration_logs_vendor_type_active ON registrat
 CREATE INDEX IF NOT EXISTS idx_registration_logs_user_last_connected ON registration_logs(requested_by, last_connected, is_active);
 CREATE INDEX IF NOT EXISTS idx_registration_logs_vendor_last_connected ON registration_logs(vendor_id, last_connected, is_active);
 
+-- At most one active registration log per device
+CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_logs_active_device ON registration_logs(device_id) WHERE is_active = TRUE;
+
+-- Create the registration_events table, an append-only log of registration lifecycle actions
+CREATE TABLE IF NOT EXISTS registration_events (
+    id BIGSERIAL PRIMARY KEY,
+    device_id VARCHAR(255),
+    vendor_id VARCHAR(255),
+    requested_by VARCHAR(255),
+    event_type VARCHAR(50) NOT NULL,
+    reason TEXT,
+    etx_status INTEGER,
+    details TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_registration_events_device_created ON registration_events(device_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_registration_events_vendor_created ON registration_events(vendor_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_registration_events_type ON registration_events(event_type);
+
 -- Create the vendor_limits table for vendor-wide registration limits
 CREATE TABLE IF NOT EXISTS vendor_limits (
     id BIGSERIAL PRIMARY KEY,

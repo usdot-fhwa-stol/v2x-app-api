@@ -3,10 +3,12 @@ package usdot.v2x.app.api.etx.registration;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.registration.*;
+import usdot.v2x.app.api.services.RegistrationEventService;
 import usdot.v2x.app.api.services.RegistrationLogService;
 import usdot.v2x.app.api.utils.SecurityContextUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -20,12 +22,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
@@ -43,6 +48,9 @@ public class RegistrationRestController {
 
     @Autowired
     private SecurityContextUtils securityContextUtils;
+
+    @Autowired
+    private RegistrationEventService registrationEventService;
 
     RegistrationRestController(
             RegistrationApi registrationApi) {
@@ -75,31 +83,23 @@ public class RegistrationRestController {
         // Check capacity and clean up if needed before registration
         registrationLogService.ensureCapacityForRegistration(vendorId, requestedBy);
 
-        if (retry) {
-            return registrationApi.clientRegistrationRetryPending(request, num_retries, num_sec_to_sleep)
-                    .doOnSuccess(registrationResponse -> {
-                        if (registrationResponse != null) {
-                            registrationLogService.logRegistration(
-                                    registrationResponse,
-                                    request.getClientType(),
-                                    request.getClientSubtype(),
-                                    vendorId,
-                                    requestedBy);
-                        }
-                    });
-        } else {
-            return registrationApi.clientRegistrationPost(request)
-                    .doOnSuccess(registrationResponse -> {
-                        if (registrationResponse != null) {
-                            registrationLogService.logRegistration(
-                                    registrationResponse,
-                                    request.getClientType(),
-                                    request.getClientSubtype(),
-                                    vendorId,
-                                    requestedBy);
-                        }
-                    });
-        }
+        Mono<RegistrationResponse> registration = retry
+                ? registrationApi.clientRegistrationRetryPending(request, num_retries, num_sec_to_sleep)
+                : registrationApi.clientRegistrationPost(request);
+
+        return registration
+                .doOnSuccess(registrationResponse -> {
+                    if (registrationResponse != null) {
+                        registrationLogService.logRegistration(
+                                registrationResponse,
+                                request.getClientType(),
+                                request.getClientSubtype(),
+                                vendorId,
+                                requestedBy);
+                    }
+                })
+                .doOnError(error -> registrationEventService.recordFailure(
+                        RegistrationEventType.REGISTER_FAILED, null, vendorId, requestedBy, error));
     }
 
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
@@ -126,15 +126,20 @@ public class RegistrationRestController {
         String vendorId = securityContextUtils.determineVendorId();
         String requestedBy = securityContextUtils.determineRequestedBy();
 
-        // Check capacity and clean up if needed before registration update
-        registrationLogService.ensureCapacityForRegistration(vendorId, requestedBy);
+        // An update renews an existing registration, so no capacity check or eviction
+        Mono<RegistrationResponse> update = retry
+                ? registrationApi.clientRegistrationPutRetryPending(request, num_retries, num_sec_to_sleep)
+                : registrationApi.clientRegistrationPut(request);
 
-        if (retry) {
-            return registrationApi.clientRegistrationPutRetryPending(request, num_retries,
-                    num_sec_to_sleep);
-        } else {
-            return registrationApi.clientRegistrationPut(request);
-        }
+        return update
+                .doOnSuccess(registrationResponse -> {
+                    if (registrationResponse != null) {
+                        registrationLogService.logRegistrationUpdate(
+                                registrationResponse, request.getDeviceId(), vendorId, requestedBy);
+                    }
+                })
+                .doOnError(error -> registrationEventService.recordFailure(
+                        RegistrationEventType.PUT_FAILED, request.getDeviceId(), vendorId, requestedBy, error));
     }
 
     @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
@@ -153,13 +158,20 @@ public class RegistrationRestController {
     public Mono<ConnectionResponse> postConnection(
             @Parameter(description = "Client connection information", required = true) @RequestBody ConnectionPostRequest request) {
 
+        // Determine vendor ID and requested by before making reactive calls
+        String vendorId = securityContextUtils.determineVendorId();
+        String requestedBy = securityContextUtils.determineRequestedBy();
+
         return registrationApi.clientConnectionPost(request)
                 .doOnSuccess(connectionResponse -> {
                     // Update last connected timestamp for the device
                     if (connectionResponse != null && request.getDeviceId() != null) {
                         registrationLogService.updateLastConnected(request.getDeviceId());
+                        recordConnect(request.getDeviceId(), vendorId, requestedBy, connectionResponse);
                     }
-                });
+                })
+                .doOnError(error -> registrationEventService.recordFailure(
+                        RegistrationEventType.CONNECT_FAILED, request.getDeviceId(), vendorId, requestedBy, error));
     }
 
     @Deprecated(since = "v1.0.0", forRemoval = true)
@@ -215,8 +227,13 @@ public class RegistrationRestController {
                                 // Update last connected timestamp for the device
                                 if (connectionResponse != null && registrationResponse.getDeviceId() != null) {
                                     registrationLogService.updateLastConnected(registrationResponse.getDeviceId());
+                                    recordConnect(registrationResponse.getDeviceId(), vendorId, requestedBy,
+                                            connectionResponse);
                                 }
                             })
+                            .doOnError(error -> registrationEventService.recordFailure(
+                                    RegistrationEventType.CONNECT_FAILED, registrationResponse.getDeviceId(),
+                                    vendorId, requestedBy, error))
                             .map(connectionResponse -> new CompleteResponse(
                                     registrationResponse, connectionResponse));
 
@@ -275,6 +292,76 @@ public class RegistrationRestController {
     })
     public Mono<Object> getAcls() {
         return registrationApi.getDeviceRoles();
+    }
+
+    @PreAuthorize("hasRole('ROLE_ADMIN') || hasRole('ROLE_DEPOSITOR') || hasRole('ROLE_USER')")
+    @GetMapping("/registration/active")
+    @Operation(summary = "List active ETX registrations", description = "Lists the clients currently registered in ETX for the caller's vendor, "
+            + "merged with local tracking data. Also reports devices registered in ETX that are not tracked locally "
+            + "and local registrations that ETX no longer reports. Admins may pass vendorId to view another vendor.", security = @SecurityRequirement(name = "BearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Active registrations retrieved successfully", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ActiveRegistrationsResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions or vendorId override without admin role", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public Mono<ActiveRegistrationsResponse> getActiveRegistrations(
+            @Parameter(description = "Vendor ID to query (admin only, defaults to the caller's vendor)") @RequestParam(name = "vendorId", required = false) String vendorId) {
+        String callerVendorId = securityContextUtils.determineVendorId();
+        if (vendorId != null && !vendorId.equals(callerVendorId) && !securityContextUtils.isAdmin()) {
+            return Mono.error(new ErrorResponseException(
+                    new ErrorResponse("Forbidden", "Only admins may query another vendor's registrations"),
+                    HttpStatus.FORBIDDEN));
+        }
+        return registrationLogService.getActiveRegistrationsView(vendorId != null ? vendorId : callerVendorId);
+    }
+
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PostMapping("/registration/reconcile")
+    @Operation(summary = "Reconcile registrations with ETX", description = "Marks local registrations that ETX no longer reports as inactive and "
+            + "reports ETX registrations that are not tracked locally (Admin only). Defaults to the caller's vendor.", security = @SecurityRequirement(name = "BearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Reconciliation completed", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ReconcileResult.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions"),
+            @ApiResponse(responseCode = "500", description = "Internal server error - ETX query failed")
+    })
+    public ResponseEntity<ReconcileResult> reconcileRegistrations(
+            @Parameter(description = "Vendor ID to reconcile (defaults to the caller's vendor)") @RequestParam(name = "vendorId", required = false) String vendorId) {
+        String targetVendorId = vendorId != null ? vendorId : securityContextUtils.determineVendorId();
+        try {
+            return ResponseEntity.ok(registrationLogService.reconcileWithEtx(targetVendorId));
+        } catch (Exception e) {
+            log.error("Failed to reconcile registrations for vendor {}: {}", targetVendorId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @GetMapping("/registration/events")
+    @Operation(summary = "List registration events", description = "Lists registration lifecycle events (register, connect, evict, expire, "
+            + "reconcile, failures), newest first, to correlate registration activity with message loss (Admin only).", security = @SecurityRequirement(name = "BearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Events retrieved successfully", content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = RegistrationEvent.class)))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - invalid or missing authentication"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - insufficient permissions")
+    })
+    public List<RegistrationEvent> getRegistrationEvents(
+            @Parameter(description = "Filter by device ID") @RequestParam(name = "deviceId", required = false) String deviceId,
+            @Parameter(description = "Filter by vendor ID") @RequestParam(name = "vendorId", required = false) String vendorId,
+            @Parameter(description = "Start of the window, ISO-8601 (default: 24 hours ago)", example = "2026-10-01T00:00:00Z") @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @Parameter(description = "End of the window, ISO-8601 (default: now)", example = "2026-10-02T00:00:00Z") @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @Parameter(description = "Maximum number of events to return (1-5000)", example = "500") @RequestParam(name = "limit", required = false, defaultValue = "500") Integer limit) {
+        Instant windowEnd = to != null ? to : Instant.now();
+        Instant windowStart = from != null ? from : windowEnd.minus(24, ChronoUnit.HOURS);
+        int boundedLimit = Math.max(1, Math.min(limit, 5000));
+        return registrationEventService.findEvents(deviceId, vendorId, windowStart, windowEnd, boundedLimit);
+    }
+
+    private void recordConnect(String deviceId, String vendorId, String requestedBy,
+            ConnectionResponse connectionResponse) {
+        registrationEventService.record(RegistrationEventType.CONNECT, deviceId, vendorId, requestedBy,
+                "connection established", null, "mqttUrl=" + connectionResponse.getMqttUrl());
     }
 
 }

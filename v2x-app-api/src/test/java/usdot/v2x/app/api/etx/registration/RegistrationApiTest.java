@@ -20,6 +20,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.util.List;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -264,6 +268,82 @@ public class RegistrationApiTest {
         assertEquals("Bearer access-token", headers.getFirst(HttpHeaders.AUTHORIZATION));
         assertEquals("session-token", headers.getFirst("SessionToken"));
         assertEquals("test-vendor-id", headers.getFirst("VendorID"));
+    }
+
+    @Test
+    public void testQueryActiveClients_Success() {
+        EtxClientRecord record = new EtxClientRecord();
+        record.setDeviceId("6b97e1f1-7c3b-4094-95e8-b7ecfa9c3ca1");
+        List<EtxClientRecord> expectedResponse = List.of(record);
+        when(requestHeadersSpec.exchangeToMono(any())).thenReturn(Mono.just(expectedResponse));
+
+        StepVerifier.create(registrationApi.queryActiveClients("imp-vendor"))
+                .expectNext(expectedResponse)
+                .verifyComplete();
+
+        verify(webClient).post();
+        verify(requestBodyUriSpec).uri("/api/v1/clients/query");
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(requestBodySpec).bodyValue(bodyCaptor.capture());
+        assertEquals(new ClientQueryRequest("imp-vendor"), bodyCaptor.getValue());
+        ArgumentCaptor<Consumer<HttpHeaders>> headersCaptor = ArgumentCaptor.forClass(Consumer.class);
+        verify(requestBodySpec).headers(headersCaptor.capture());
+        HttpHeaders headers = new HttpHeaders();
+        headersCaptor.getValue().accept(headers);
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, headers.getFirst(HttpHeaders.ACCEPT));
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, headers.getFirst(HttpHeaders.CONTENT_TYPE));
+        assertEquals("Bearer access-token", headers.getFirst(HttpHeaders.AUTHORIZATION));
+        assertEquals("session-token", headers.getFirst("SessionToken"));
+    }
+
+    @Test
+    public void testQueryActiveClients_Error() {
+        ErrorResponse errorResponse = new ErrorResponse("error", "description");
+        when(requestHeadersSpec.exchangeToMono(any()))
+                .thenReturn(Mono.error(new ErrorResponseException(errorResponse, HttpStatus.UNAUTHORIZED)));
+
+        StepVerifier.create(registrationApi.queryActiveClients("imp-vendor"))
+                .expectError(ErrorResponseException.class)
+                .verify();
+    }
+
+    @Test
+    public void testClientQueryRequest_SerializesVendorIdField() throws Exception {
+        String json = new ObjectMapper().writeValueAsString(new ClientQueryRequest("imp-vendor"));
+
+        assertEquals("{\"VendorId\":\"imp-vendor\"}", json);
+    }
+
+    @Test
+    public void testEtxClientRecord_DeserializesClientQueryResponse() throws Exception {
+        String json = """
+                [
+                  {
+                    "ClientSubtype": "Application",
+                    "ClientType": "Software",
+                    "DeviceID": "6b97e1f1-7c3b-4094-95e8-b7ecfa9c3ca1",
+                    "MecIds": ["tsp-sfo-1-eks-prod-edge-us-west-2-imp-prod"]
+                  },
+                  {
+                    "ClientSubtype": "Application",
+                    "ClientType": "Software",
+                    "DeviceID": "b81fd8b6-a55b-496f-9bac-468dc37d525e",
+                    "MecIds": ["tsp-sfo-1-eks-prod-edge-us-west-2-imp-prod"],
+                    "SomeFutureField": true
+                  }
+                ]
+                """;
+
+        List<EtxClientRecord> records = new ObjectMapper().readValue(json,
+                new TypeReference<List<EtxClientRecord>>() {
+                });
+
+        assertEquals(2, records.size());
+        assertEquals("6b97e1f1-7c3b-4094-95e8-b7ecfa9c3ca1", records.get(0).getDeviceId());
+        assertEquals(RegistrationClientType.Software, records.get(0).getClientType());
+        assertEquals(RegistrationClientSubType.Application, records.get(0).getClientSubtype());
+        assertEquals(List.of("tsp-sfo-1-eks-prod-edge-us-west-2-imp-prod"), records.get(0).getMecIds());
+        assertEquals("b81fd8b6-a55b-496f-9bac-468dc37d525e", records.get(1).getDeviceId());
     }
 
     @Test

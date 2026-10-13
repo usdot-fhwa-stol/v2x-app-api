@@ -687,6 +687,74 @@
         ]
       }
     },
+    "/prd/v2/registration/reconcile": {
+      "post": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Reconcile registrations with ETX",
+        "description": "Marks local registrations that ETX no longer reports as inactive and reports ETX registrations that are not tracked locally (Admin only). Defaults to the caller\u0027s vendor.",
+        "operationId": "reconcileRegistrations",
+        "parameters": [
+          {
+            "name": "vendorId",
+            "in": "query",
+            "description": "Vendor ID to reconcile (defaults to the caller\u0027s vendor)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - ETX query failed",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/prd/v2/registration-connection": {
       "post": {
         "tags": [
@@ -1751,6 +1819,116 @@
         ]
       }
     },
+    "/prd/v2/registration/events": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "List registration events",
+        "description": "Lists registration lifecycle events (register, connect, evict, expire, reconcile, failures), newest first, to correlate registration activity with message loss (Admin only).",
+        "operationId": "getRegistrationEvents",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "query",
+            "description": "Filter by device ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vendorId",
+            "in": "query",
+            "description": "Filter by vendor ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of the window, ISO-8601 (default: 24 hours ago)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "example": "2026-10-01T00:00:00Z"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of the window, ISO-8601 (default: now)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "example": "2026-10-02T00:00:00Z"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of events to return (1-5000)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 500
+            },
+            "example": 500
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RegistrationEvent"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RegistrationEvent"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RegistrationEvent"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/prd/v2/registration/cleanup/vendor/{vendorId}": {
       "get": {
         "tags": [
@@ -1818,6 +1996,74 @@
                   "items": {
                     "type": "string"
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/prd/v2/registration/active": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "List active ETX registrations",
+        "description": "Lists the clients currently registered in ETX for the caller\u0027s vendor, merged with local tracking data. Also reports devices registered in ETX that are not tracked locally and local registrations that ETX no longer reports. Admins may pass vendorId to view another vendor.",
+        "operationId": "getActiveRegistrations",
+        "parameters": [
+          {
+            "name": "vendorId",
+            "in": "query",
+            "description": "Vendor ID to query (admin only, defaults to the caller\u0027s vendor)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active registrations retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveRegistrationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveRegistrationsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions or vendorId override without admin role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2853,6 +3099,59 @@
         ]
       }
     },
+    "/prd/v2/acl-rules": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Get device roles/ACLs",
+        "description": "Retrieves device roles/ACLs for the vendor from Thingspace",
+        "operationId": "getAcls",
+        "responses": {
+          "200": {
+            "description": "Device roles retrieved successfully",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing authentication",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/prd/v2/admin/user-limits/user/{username}/vendor/{vendorId}": {
       "delete": {
         "tags": [
@@ -3362,6 +3661,30 @@
           "ClientSubtype",
           "ClientType"
         ]
+      },
+      "ReconcileResult": {
+        "type": "object",
+        "properties": {
+          "vendorId": {
+            "type": "string"
+          },
+          "etxCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "deactivated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "untrackedInEtx": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "RegistrationConnectionPostRequest": {
         "type": "object",
@@ -4089,6 +4412,156 @@
           },
           "VendorID": {
             "type": "string"
+          }
+        }
+      },
+      "RegistrationEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "vendorId": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "REGISTER",
+              "REGISTER_FAILED",
+              "PUT",
+              "PUT_FAILED",
+              "CONNECT",
+              "CONNECT_FAILED",
+              "EVICT_USER_LIMIT",
+              "EVICT_VENDOR_LIMIT",
+              "EXPIRE",
+              "DELETE_FAILED",
+              "RECONCILED_MISSING",
+              "UNTRACKED_IN_ETX"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "etxStatus": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActiveRegistrationView": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "clientType": {
+            "type": "string",
+            "enum": [
+              "Vehicle",
+              "VulnerableRoadUser",
+              "TrafficLightController",
+              "InfrastructureSensor",
+              "OnboardSensor",
+              "Software"
+            ]
+          },
+          "clientSubtype": {
+            "type": "string",
+            "enum": [
+              "PassengerCar",
+              "Truck",
+              "Bus",
+              "EmergencyVehicle",
+              "SchoolBus",
+              "MaintenanceVehicle",
+              "Pedestrian",
+              "Bicycle",
+              "Scooter",
+              "Motorcycle",
+              "RoadSideUnit",
+              "Camera",
+              "Lidar",
+              "Radar",
+              "InductiveLoop",
+              "MagneticSensor",
+              "Platform",
+              "Application",
+              "NA"
+            ]
+          },
+          "mecIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trackedLocally": {
+            "type": "boolean"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastConnected": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActiveRegistrationsResponse": {
+        "type": "object",
+        "properties": {
+          "vendorId": {
+            "type": "string"
+          },
+          "etxCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "localActiveCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveRegistrationView"
+            }
+          },
+          "untrackedInEtx": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "staleLocal": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
