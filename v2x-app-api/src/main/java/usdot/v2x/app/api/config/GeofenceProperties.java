@@ -21,11 +21,32 @@ public class GeofenceProperties {
     @Data
     public static class Geohash {
         private int precision = 7;
+        /**
+         * Maximum number of CPU workers shared by polygon component scans. A value
+         * of one disables parallel analysis. Runtime parallelism is also capped at
+         * the number of processors visible to the JVM.
+         */
+        private int polygonAnalysisParallelism = 4;
     }
 
     @Data
     public static class Limits {
         private int maxGeohashes = 500;
+        /**
+         * Maximum number of precision-level cells that may be inspected while
+         * building one deployment. This bounds polygon-envelope scans before any
+         * per-cell geometry work is performed.
+         */
+        private long maxCandidateCells = 100_000;
+        private int minGeohashes = 4;
+        private boolean allowOverlappingGeohashes = false;
+        /**
+         * Intersecting-cell count at which 3×3 representative thinning begins.
+         * Deployments with this many cells or fewer keep every available
+         * intersecting geohash. Larger deployments are thinned to one
+         * representative per 3×3 block. Values of {@code 0} or less always thin.
+         */
+        private int representativeFilterThreshold = 20;
     }
 
     @Data

@@ -1,24 +1,41 @@
 package usdot.v2x.app.api.utils;
 
+import ch.hsr.geohash.BoundingBox;
 import ch.hsr.geohash.GeoHash;
+import ch.hsr.geohash.WGS84Point;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import usdot.v2x.app.api.config.GeofenceProperties;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.services.ErrorLoggingService;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import usdot.v2x.app.api.exceptions.NoAvailableGeohashException;
+import usdot.v2x.app.api.exceptions.GeofenceTooLargeException;
 import org.locationtech.jts.geom.*;
+import org.locationtech.jts.geom.prep.PreparedGeometry;
+import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
 import org.locationtech.spatial4j.distance.DistanceUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Utility class for geohash operations and geospatial data processing.
@@ -27,15 +44,35 @@ import java.util.Set;
 @Slf4j
 public class GeohashUtils {
 
+    /**
+     * One representative per this many cells in each direction (3×3 coverage zone).
+     * Subscribers receive messages for their cell + all 8 neighbors (Chebyshev
+     * radius 1), so a block of 3 is the largest tile where a single center
+     * representative is guaranteed to reach every subscriber in that tile.
+     */
+    private static final int PRIMARY_BLOCK_SIZE = 3;
+    /**
+     * Chebyshev distance at which a selected representative covers a subscriber
+     * cell (own cell + 8 neighbors). Spacing of {@link #PRIMARY_BLOCK_SIZE} is
+     * preferred; {@code COVERAGE_RADIUS + 1} is allowed when a hole would remain.
+     */
+    private static final int COVERAGE_RADIUS = 1;
+    /**
+     * Minimum cell-index separation when topping up small regions to minGeohashes.
+     * Must be >= PRIMARY_BLOCK_SIZE to prevent supplement cells from landing inside
+     * the coverage zone of an existing representative.
+     */
+    private static final int SUPPLEMENT_MIN_CELL_SEPARATION = 3;
+    /** Executor coordination is slower than a direct scan below this work size. */
+    private static final long PARALLEL_SCAN_MIN_CANDIDATE_CELLS = 4_096;
+
     private final ObjectMapper objectMapper;
     private final GeometryFactory geometryFactory;
     private final ErrorLoggingService errorLoggingService;
     private final GeofenceProperties geofenceProperties;
     private final JdbcTemplate jdbcTemplate;
-
-    // Cache for step size calculations to avoid repeated calculations
-    private final Map<Integer, Double> latStepCache = new HashMap<>();
-    private final Map<Integer, Double> lonStepCache = new HashMap<>();
+    private final int polygonAnalysisParallelism;
+    private final ExecutorService polygonAnalysisExecutor;
 
     public GeohashUtils(ObjectMapper objectMapper, ErrorLoggingService errorLoggingService,
             GeofenceProperties geofenceProperties, JdbcTemplate jdbcTemplate) {
@@ -44,6 +81,24 @@ public class GeohashUtils {
         this.errorLoggingService = errorLoggingService;
         this.geofenceProperties = geofenceProperties;
         this.jdbcTemplate = jdbcTemplate;
+        int configuredParallelism = geofenceProperties.getGeohash().getPolygonAnalysisParallelism();
+        if (configuredParallelism <= 0) {
+            throw new IllegalStateException("geofence.geohash.polygon-analysis-parallelism must be positive");
+        }
+        this.polygonAnalysisParallelism = Math.min(
+                configuredParallelism, Math.max(1, Runtime.getRuntime().availableProcessors()));
+        this.polygonAnalysisExecutor = polygonAnalysisParallelism > 1
+                ? Executors.newFixedThreadPool(
+                        polygonAnalysisParallelism,
+                        Thread.ofPlatform().daemon().name("geohash-polygon-analysis-", 0).factory())
+                : null;
+    }
+
+    @PreDestroy
+    public void shutdownPolygonAnalysisExecutor() {
+        if (polygonAnalysisExecutor != null) {
+            polygonAnalysisExecutor.shutdown();
+        }
     }
 
     /**
@@ -62,6 +117,8 @@ public class GeohashUtils {
             Set<String> existingUsed = fetchActiveGeohashes();
             // Use the optimized approach by default
             return extractGeohashesInternal(geojson, precision, existingUsed);
+        } catch (GeofenceTooLargeException e) {
+            throw e;
         } catch (Exception e) {
             String errorMessage = "Error extracting geohashes from GeoJSON: " + e.getMessage();
             log.error(errorMessage, e);
@@ -100,6 +157,8 @@ public class GeohashUtils {
             // Use the optimized approach by default
             return extractGeohashesInternal(geojson, precision,
                     existingUsedGeohashes == null ? java.util.Collections.emptySet() : existingUsedGeohashes);
+        } catch (GeofenceTooLargeException e) {
+            throw e;
         } catch (Exception e) {
             String errorMessage = "Error extracting geohashes from GeoJSON: " + e.getMessage();
             log.error(errorMessage, e);
@@ -123,6 +182,8 @@ public class GeohashUtils {
             JsonNode geojson = objectMapper.readTree(geojsonString);
             Set<String> existingUsed = fetchActiveGeohashesExcluding(geofenceIdToExclude);
             return extractGeohashesInternal(geojson, precision, existingUsed);
+        } catch (GeofenceTooLargeException e) {
+            throw e;
         } catch (Exception e) {
             String errorMessage = "Error extracting geohashes from GeoJSON (exclude geofence): " + e.getMessage();
             log.error(errorMessage, e);
@@ -152,7 +213,9 @@ public class GeohashUtils {
             Set<String> existingUsed = fetchActiveGeohashes();
             // Use the optimized approach by default
             return extractGeofenceFeatureCollectionInternal(geofenceFeatureCollection, precision,
-                    existingUsed);
+                    existingUsed, true);
+        } catch (GeofenceTooLargeException e) {
+            throw e;
         } catch (Exception e) {
             String errorMessage = "Error extracting geohashes from GeofenceFeatureCollection: " + e.getMessage();
             log.error(errorMessage, e);
@@ -178,9 +241,23 @@ public class GeohashUtils {
      */
     public List<String> extractGeohashesFromGeofenceFeatureCollection(
             GeofenceFeatureCollection geofenceFeatureCollection, String geofenceId) {
+        return extractGeohashesFromGeofenceFeatureCollection(geofenceFeatureCollection, geofenceId, true);
+    }
+
+    /**
+     * Extract geohashes from GeofenceFeatureCollection POJO with default precision,
+     * excluding an existing deployment's cells from collision checks.
+     *
+     * @param filterRepresentatives when {@code true} (default), thin to 3×3
+     *                              representatives; when {@code false}, return
+     *                              every intersecting cell that is still available
+     */
+    public List<String> extractGeohashesFromGeofenceFeatureCollection(
+            GeofenceFeatureCollection geofenceFeatureCollection, String geofenceId,
+            boolean filterRepresentatives) {
         Set<String> existingUsed = fetchActiveGeohashesExcluding(geofenceId);
         return extractGeofenceFeatureCollectionInternal(geofenceFeatureCollection,
-                geofenceProperties.getGeohash().getPrecision(), existingUsed);
+                geofenceProperties.getGeohash().getPrecision(), existingUsed, filterRepresentatives);
     }
 
     /**
@@ -189,9 +266,27 @@ public class GeohashUtils {
      */
     public List<String> extractGeohashesFromGeofenceFeatureCollection(
             GeofenceFeatureCollection geofenceFeatureCollection, int precision, Set<String> existingUsedGeohashes) {
+        return extractGeohashesFromGeofenceFeatureCollection(
+                geofenceFeatureCollection, precision, existingUsedGeohashes, true);
+    }
+
+    /**
+     * Extract geohashes from GeofenceFeatureCollection with a set of already-used
+     * geohashes to avoid collisions.
+     *
+     * @param filterRepresentatives when {@code true} (default), thin to 3×3
+     *                              representatives; when {@code false}, return
+     *                              every intersecting cell that is still available
+     */
+    public List<String> extractGeohashesFromGeofenceFeatureCollection(
+            GeofenceFeatureCollection geofenceFeatureCollection, int precision, Set<String> existingUsedGeohashes,
+            boolean filterRepresentatives) {
         try {
             return extractGeofenceFeatureCollectionInternal(geofenceFeatureCollection, precision,
-                    existingUsedGeohashes == null ? java.util.Collections.emptySet() : existingUsedGeohashes);
+                    existingUsedGeohashes == null ? java.util.Collections.emptySet() : existingUsedGeohashes,
+                    filterRepresentatives);
+        } catch (GeofenceTooLargeException e) {
+            throw e;
         } catch (Exception e) {
             String errorMessage = "Error extracting geohashes from GeofenceFeatureCollection: " + e.getMessage();
             log.error(errorMessage, e);
@@ -413,30 +508,17 @@ public class GeohashUtils {
     }
 
     /**
-     * Calculate latitude step size for geohash grid
+     * Latitude step for a precision; see {@link GeohashGrid#latStep(int)}.
      */
     private double calculateLatStep(int precision) {
-        return latStepCache.computeIfAbsent(precision, p -> {
-            // More accurate step size based on geohash precision
-            // Geohash uses base32 encoding, so each character represents 5 bits
-            // For latitude: 90 degrees / 2^(bits/2)
-            int bits = p * 5;
-            int latBits = bits / 2;
-            return 90.0 / Math.pow(2, latBits);
-        });
+        return GeohashGrid.latStep(precision);
     }
 
     /**
-     * Calculate longitude step size for geohash grid
+     * Longitude step for a precision; see {@link GeohashGrid#lonStep(int)}.
      */
     private double calculateLonStep(int precision) {
-        return lonStepCache.computeIfAbsent(precision, p -> {
-            // More accurate step size based on geohash precision
-            // For longitude: 180 degrees / 2^(bits/2)
-            int bits = p * 5;
-            int lonBits = (bits + 1) / 2; // Longitude gets the extra bit for odd precision
-            return 180.0 / Math.pow(2, lonBits);
-        });
+        return GeohashGrid.lonStep(precision);
     }
 
     /**
@@ -474,55 +556,41 @@ public class GeohashUtils {
      * performance
      * 
      * @param geojson   The parsed GeoJSON JsonNode
-     * @param precision The geohash precision (will be overridden to 7 for
-     *                  filtering)
+     * @param precision The geohash precision used for coverage and filtering
      * @return List containing representative geohashes from 3x3 grids
      */
     private List<String> extractGeohashesInternal(JsonNode geojson, int precision,
             Set<String> existingUsedGeohashes) {
-        int gridPrecision = 7; // Use level 7 for geohash filtering
-        int gridSize = 3;
-
-        // Track geohashes that are already covered by existing 3x3 grids
-        Set<String> affectedGeohashes = new HashSet<>();
-        List<String> representativeGeohashes = new ArrayList<>();
-
-        // Pre-calculate step sizes for performance
-        double latStep = calculateLatStep(gridPrecision);
-        double lonStep = calculateLonStep(gridPrecision);
-
         try {
+            List<Geometry> geometries = new ArrayList<>();
+            Set<String> intersecting = new HashSet<>();
+            Set<String> priorityCells = new LinkedHashSet<>();
+            GeohashScanBudget scanBudget = new GeohashScanBudget(geofenceProperties.getLimits().getMaxCandidateCells());
             if (geojson.has("type")) {
                 String type = geojson.get("type").asText();
-
                 if ("FeatureCollection".equals(type)) {
                     JsonNode features = geojson.get("features");
                     if (features.isArray()) {
                         for (JsonNode feature : features) {
-                            processGeometry(feature.get("geometry"), gridPrecision, gridSize,
-                                    latStep, lonStep, affectedGeohashes, representativeGeohashes,
-                                    existingUsedGeohashes);
+                            collectJtsGeometry(feature.get("geometry"), geometries);
                         }
                     }
                 } else if ("Feature".equals(type)) {
-                    processGeometry(geojson.get("geometry"), gridPrecision, gridSize,
-                            latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+                    collectJtsGeometry(geojson.get("geometry"), geometries);
                 } else {
-                    // Direct geometry
-                    processGeometry(geojson, gridPrecision, gridSize,
-                            latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+                    collectJtsGeometry(geojson, geometries);
                 }
             }
+            collectIntersectingCells(geometries, intersecting, priorityCells, precision, scanBudget);
 
-            log.debug("Geohash filtering: generated {} representative geohashes covering {} total geohashes",
-                    representativeGeohashes.size(), affectedGeohashes.size());
+            List<String> representatives = selectDeploymentGeohashes(
+                    intersecting, priorityCells, existingUsedGeohashes, precision, true);
 
-            if (representativeGeohashes.isEmpty()) {
+            if (representatives.isEmpty()) {
                 throw new NoAvailableGeohashException("Geohash area saturated for requested deployment area.");
             }
-            return representativeGeohashes;
-        } catch (NoAvailableGeohashException e) {
-            // propagate as-is so API can return 409
+            return representatives;
+        } catch (NoAvailableGeohashException | GeofenceTooLargeException e) {
             throw e;
         } catch (Exception e) {
             log.error("Error in geohash filtering extraction: {}", e.getMessage());
@@ -534,42 +602,39 @@ public class GeohashUtils {
      * Extract geohashes from GeofenceFeatureCollection with integrated filtering
      * 
      * @param geofenceFeatureCollection The GeofenceFeatureCollection POJO
-     * @param precision                 The geohash precision (will be overridden to
-     *                                  7 for filtering)
+     * @param precision                 The geohash precision used for coverage and filtering
      * @return List containing representative geohashes from 3x3 grids
      */
     private List<String> extractGeofenceFeatureCollectionInternal(
-            GeofenceFeatureCollection geofenceFeatureCollection, int precision, Set<String> existingUsedGeohashes) {
-        int gridPrecision = 7; // Use level 7 for geohash filtering
-        int gridSize = 3;
-
-        // Track geohashes that are already covered by existing 3x3 grids
-        Set<String> affectedGeohashes = new HashSet<>();
-        List<String> representativeGeohashes = new ArrayList<>();
-
-        // Pre-calculate step sizes for performance
-        double latStep = calculateLatStep(gridPrecision);
-        double lonStep = calculateLonStep(gridPrecision);
-
+            GeofenceFeatureCollection geofenceFeatureCollection, int precision, Set<String> existingUsedGeohashes,
+            boolean filterRepresentatives) {
         try {
+            List<Geometry> geometries = new ArrayList<>();
+            Set<String> intersecting = new HashSet<>();
+            Set<String> priorityCells = new LinkedHashSet<>();
+            GeohashScanBudget scanBudget = new GeohashScanBudget(geofenceProperties.getLimits().getMaxCandidateCells());
             if (geofenceFeatureCollection != null && geofenceFeatureCollection.getFeatures() != null) {
                 for (var feature : geofenceFeatureCollection.getFeatures()) {
                     if (feature.getGeometry() != null) {
-                        processCustomGeometry(feature.getGeometry(), gridPrecision, gridSize,
-                                latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+                        Geometry jtsGeometry = convertCustomGeometryToJTS(feature.getGeometry());
+                        if (jtsGeometry != null) {
+                            geometries.add(jtsGeometry);
+                        }
                     }
                 }
             }
+            collectIntersectingCells(geometries, intersecting, priorityCells, precision, scanBudget);
 
-            log.debug("Geohash filtering: generated {} representative geohashes covering {} total geohashes",
-                    representativeGeohashes.size(), affectedGeohashes.size());
+            List<String> selected = selectDeploymentGeohashes(
+                    intersecting, priorityCells, existingUsedGeohashes, precision,
+                    filterRepresentatives);
 
-            if (representativeGeohashes.isEmpty()) {
+            if (selected.isEmpty()) {
                 throw new NoAvailableGeohashException("No available representative geohashes found (area saturated)");
             }
-            return representativeGeohashes;
-        } catch (NoAvailableGeohashException e) {
-            // propagate as-is so API can return 409
+
+            return selected;
+        } catch (NoAvailableGeohashException | GeofenceTooLargeException e) {
             throw e;
         } catch (Exception e) {
             log.error("Error in geofence geohash filtering extraction: {}", e.getMessage());
@@ -578,324 +643,766 @@ public class GeohashUtils {
     }
 
     /**
-     * Process a geometry with integrated filtering
+     * Convert a supported GeoJSON geometry and retain the existing invalid-node
+     * warning behavior.
      */
-    private void processGeometry(JsonNode geometry, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
+    private void collectJtsGeometry(JsonNode geometry, List<Geometry> sink) {
         if (geometry == null || !geometry.has("type") || !geometry.has("coordinates")) {
             return;
         }
-
         try {
-            // Convert GeoJSON to JTS Geometry
             Geometry jtsGeometry = convertGeoJSONToJTS(geometry);
             if (jtsGeometry != null) {
-                processJTSGeometry(jtsGeometry, gridPrecision, gridSize,
-                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+                sink.add(jtsGeometry);
             }
         } catch (Exception e) {
-            log.warn("Error converting geometry for filtering: {}", e.getMessage());
+            log.warn("Error converting GeoJSON geometry: {}", e.getMessage());
         }
     }
 
-    /**
-     * Process a custom geometry with integrated filtering
-     */
-    private void processCustomGeometry(
-            usdot.v2x.app.api.models.etx.configuration.geometry.Geometry geometry,
-            int gridPrecision, int gridSize, double latStep, double lonStep,
-            Set<String> affectedGeohashes, List<String> representativeGeohashes, Set<String> existingUsedGeohashes) {
-        if (geometry == null) {
+    private void collectIntersectingCells(
+            List<Geometry> geometries, Set<String> sink, Set<String> priorityCells,
+            int precision, GeohashScanBudget scanBudget) {
+        if (geometries.isEmpty()) {
             return;
         }
-
-        try {
-            // Convert custom geometry to JTS Geometry
-            Geometry jtsGeometry = convertCustomGeometryToJTS(geometry);
-            if (jtsGeometry != null) {
-                processJTSGeometry(jtsGeometry, gridPrecision, gridSize,
-                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-            }
-        } catch (Exception e) {
-            log.warn("Error converting custom geometry for filtering: {}", e.getMessage());
-        }
+        Geometry deploymentGeometry = geometries.size() == 1
+                ? geometries.get(0)
+                : geometryFactory.createGeometryCollection(geometries.toArray(Geometry[]::new));
+        collectPriorityCells(deploymentGeometry, precision, priorityCells);
+        sink.addAll(collectIntersectingGeohashCells(deploymentGeometry, precision, scanBudget));
     }
 
     /**
-     * Process JTS geometry with integrated filtering
+     * Choose deployment cells: keep every intersecting cell until the region
+     * exceeds {@code representativeFilterThreshold}, then thin to uniform 3×3
+     * representatives.
      */
-    private void processJTSGeometry(Geometry geometry, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
+    private List<String> selectDeploymentGeohashes(
+            Set<String> intersectingCells,
+            Set<String> priorityCells,
+            Set<String> existingUsedGeohashes,
+            int precision,
+            boolean filterRepresentatives) {
+        int filterThreshold = geofenceProperties.getLimits().getRepresentativeFilterThreshold();
+        boolean applyFilter = filterRepresentatives
+                && intersectingCells != null
+                && intersectingCells.size() > Math.max(0, filterThreshold);
+
+        List<String> selected = applyFilter
+                ? selectRepresentativesFromIntersectingCells(
+                        intersectingCells, priorityCells, existingUsedGeohashes, precision)
+                : selectAllAvailableIntersectingCells(intersectingCells, existingUsedGeohashes);
+
+        if (applyFilter) {
+            log.debug("Geohash filtering: {} representatives from {} intersecting cells",
+                    selected.size(), intersectingCells.size());
+        } else if (filterRepresentatives) {
+            log.debug("Geohash filtering skipped ({} intersecting cells <= threshold {}): keeping {} available cells",
+                    intersectingCells == null ? 0 : intersectingCells.size(),
+                    filterThreshold, selected.size());
+        } else {
+            log.debug("Geohash extraction without representative filtering: {} cells from {} intersecting cells",
+                    selected.size(), intersectingCells == null ? 0 : intersectingCells.size());
+        }
+        return selected;
+    }
+
+    /**
+     * Select representatives from all cells that intersect the deployment geometry:
+     * polygon vertices, one per 3×3 block, a coverage fill for remaining holes,
+     * and an optional small-region supplement. Vertex seeding prevents narrow
+     * polygon tips from being replaced by a nearby cell whose center happens to
+     * be deeper inside the block.
+     */
+    private List<String> selectRepresentativesFromIntersectingCells(
+            Set<String> intersectingCells,
+            Set<String> priorityCells,
+            Set<String> existingUsedGeohashes,
+            int precision) {
+        if (intersectingCells == null || intersectingCells.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> existingUsed = existingUsedGeohashes == null
+                ? Set.of()
+                : existingUsedGeohashes;
+        double latStep = calculateLatStep(precision);
+        double lonStep = calculateLonStep(precision);
+        boolean allowSharing = geofenceProperties.getLimits().isAllowOverlappingGeohashes();
+        Map<String, long[]> indicesByCell = cellIndexMap(intersectingCells, latStep, lonStep);
+
+        List<String> selected = new ArrayList<>();
+        List<long[]> selectedIndices = new ArrayList<>();
+        addPriorityRepresentatives(selected, selectedIndices, priorityCells, intersectingCells,
+                existingUsed, allowSharing, latStep, lonStep);
+        enforceMaximumGeohashCount(selected);
+        selectOnePerBlock(intersectingCells, existingUsed, allowSharing, latStep, lonStep,
+                PRIMARY_BLOCK_SIZE, selected, selectedIndices, indicesByCell);
+        enforceMaximumGeohashCount(selected);
+        fillCoverageGaps(selected, selectedIndices, intersectingCells, existingUsed, allowSharing,
+                latStep, lonStep, indicesByCell);
+
+        int minGeohashes = geofenceProperties.getLimits().getMinGeohashes();
+        if (selected.size() < minGeohashes) {
+            log.debug("Below minimum geohashes ({} < {}), running supplement pass",
+                    selected.size(), minGeohashes);
+            supplementToMinimum(
+                    selected, intersectingCells, existingUsed, allowSharing, latStep, lonStep, minGeohashes);
+        }
+
+        enforceMaximumGeohashCount(selected);
+        return selected;
+    }
+
+    /**
+     * Return every intersecting cell that is still available, without 3×3
+     * representative thinning or min-geohash supplement. Collision avoidance and
+     * {@code maxGeohashes} still apply.
+     */
+    private List<String> selectAllAvailableIntersectingCells(
+            Set<String> intersectingCells,
             Set<String> existingUsedGeohashes) {
-        if (geometry == null) {
+        if (intersectingCells == null || intersectingCells.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> existingUsed = existingUsedGeohashes == null
+                ? Set.of()
+                : existingUsedGeohashes;
+        boolean allowSharing = geofenceProperties.getLimits().isAllowOverlappingGeohashes();
+
+        List<String> selected = new ArrayList<>();
+        for (String cell : intersectingCells) {
+            if (isCellAvailable(cell, existingUsed, allowSharing)) {
+                selected.add(cell);
+                enforceMaximumGeohashCount(selected);
+            }
+        }
+
+        enforceMaximumGeohashCount(selected);
+        return selected;
+    }
+
+    /**
+     * Enumerate every level-{@code precision} geohash cell whose bounding box
+     * intersects {@code geometry}. JTS {@code intersects} semantics are deliberate:
+     * zero-area edge or corner contact counts as coverage, while cells wholly inside
+     * a polygon hole do not intersect the deployment geometry.
+     */
+    private Set<String> collectIntersectingGeohashCells(
+            Geometry geometry, int precision, GeohashScanBudget scanBudget) {
+        Set<String> cells = new HashSet<>();
+        if (geometry == null || geometry.isEmpty()) {
+            return cells;
+        }
+
+        List<GeometryScan> scans = new ArrayList<>();
+        long candidateCells = 0;
+        for (Geometry component : decomposeGeometry(geometry)) {
+            BoundingBox bbox = toGeohashBoundingBox(component.getEnvelopeInternal(), precision);
+            if (bbox == null) {
+                log.warn("Geometry component envelope is invalid; falling back to centroid cell");
+                cells.addAll(cellsFromGeometryCentroid(component, precision));
+                continue;
+            }
+
+            // Reserve every component synchronously before starting workers. This keeps
+            // oversized-region rejection deterministic and prevents partial expensive work.
+            candidateCells = scanBudget.reserve(bbox, precision);
+            scans.add(new GeometryScan(component, bbox));
+        }
+
+        if (shouldScanInParallel(scans, candidateCells)) {
+            cells.addAll(scanGeometryComponentsInParallel(scans, precision));
+        } else {
+            for (GeometryScan scan : scans) {
+                cells.addAll(scanGeometryComponent(scan, precision));
+            }
+        }
+
+        if (cells.isEmpty()) {
+            cells.addAll(cellsFromGeometryCentroid(geometry, precision));
+        }
+        return cells;
+    }
+
+    /**
+     * Split collection geometries into atomic components. Polygon holes remain part
+     * of their containing polygon, while disconnected MultiPolygon members receive
+     * independent envelopes. This makes a MultiPolygon use the same scan budget as
+     * an equivalent FeatureCollection and avoids charging for empty space between
+     * distant regions.
+     */
+    private List<Geometry> decomposeGeometry(Geometry geometry) {
+        List<Geometry> components = new ArrayList<>();
+        Deque<Geometry> pending = new ArrayDeque<>();
+        pending.push(geometry);
+        while (!pending.isEmpty()) {
+            Geometry current = pending.pop();
+            if (current == null || current.isEmpty()) {
+                continue;
+            }
+            if (current instanceof GeometryCollection collection) {
+                for (int i = collection.getNumGeometries() - 1; i >= 0; i--) {
+                    pending.push(collection.getGeometryN(i));
+                }
+            } else {
+                components.add(current);
+            }
+        }
+        return components;
+    }
+
+    private boolean shouldScanInParallel(List<GeometryScan> scans, long candidateCells) {
+        return polygonAnalysisExecutor != null
+                && scans.size() > 1
+                && candidateCells >= PARALLEL_SCAN_MIN_CANDIDATE_CELLS;
+    }
+
+    /**
+     * Run at most {@code polygonAnalysisParallelism} tasks, irrespective of how
+     * many polygon components an adversarial input contains. Each task owns its
+     * result set; the calling thread performs the final merge.
+     */
+    private Set<String> scanGeometryComponentsInParallel(List<GeometryScan> scans, int precision) {
+        int workerCount = Math.min(polygonAnalysisParallelism, scans.size());
+        AtomicInteger nextScan = new AtomicInteger();
+        List<Callable<Set<String>>> workers = new ArrayList<>(workerCount);
+        for (int worker = 0; worker < workerCount; worker++) {
+            workers.add(() -> {
+                Set<String> workerCells = new HashSet<>();
+                int index;
+                while ((index = nextScan.getAndIncrement()) < scans.size()) {
+                    workerCells.addAll(scanGeometryComponent(scans.get(index), precision));
+                }
+                return workerCells;
+            });
+        }
+
+        Set<String> cells = new HashSet<>();
+        try {
+            for (Future<Set<String>> future : polygonAnalysisExecutor.invokeAll(workers)) {
+                cells.addAll(future.get());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while calculating deployment geohashes", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to calculate deployment geohashes", cause);
+        }
+        return cells;
+    }
+
+    private Set<String> scanGeometryComponent(GeometryScan scan, int precision) {
+        Set<String> cells = new HashSet<>();
+        Geometry geometry = scan.geometry();
+        try {
+
+            // Prepare once so the spatial index is built before the per-cell loop.
+            PreparedGeometry prepared = PreparedGeometryFactory.prepare(geometry);
+
+            // Enumerate exactly the row/column range reserved by the budget.
+            // Walking geohash ordinals can traverse enormous gaps outside a
+            // small box, particularly across the equator or prime meridian.
+            GeohashScanBudget.CellRange range = GeohashScanBudget.cellRange(scan.boundingBox(), precision);
+            for (long row = range.southRow(); row <= range.northRow(); row++) {
+                double latitude = (row + 0.5) * range.latitudeStep() - 90.0;
+                for (long column = range.westColumn(); column <= range.eastColumn(); column++) {
+                    double longitude = (column + 0.5) * range.longitudeStep() - 180.0;
+                    GeoHash cell = GeoHash.withCharacterPrecision(latitude, longitude, precision);
+                    if (geometryIntersectsGeohashCell(prepared, cell)) {
+                        cells.add(cell.toBase32());
+                    }
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            log.warn("Failed to iterate geohash cells for geometry component ({}), using centroid fallback",
+                    e.getMessage());
+            return cellsFromGeometryCentroid(geometry, precision);
+        }
+        if (cells.isEmpty()) {
+            cells.addAll(cellsFromGeometryCentroid(geometry, precision));
+        }
+        return cells;
+    }
+
+    private record GeometryScan(Geometry geometry, BoundingBox boundingBox) {
+    }
+
+    /**
+     * Build a geohash {@link BoundingBox} from a JTS envelope, normalizing
+     * inverted/null bounds and including cells that touch grid-aligned minima.
+     */
+    private BoundingBox toGeohashBoundingBox(Envelope envelope, int precision) {
+        if (envelope == null || envelope.isNull()) {
+            return null;
+        }
+
+        double south = envelope.getMinY();
+        double north = envelope.getMaxY();
+        double west = envelope.getMinX();
+        double east = envelope.getMaxX();
+
+        if (Double.isNaN(south) || Double.isNaN(north) || Double.isNaN(west) || Double.isNaN(east)) {
+            return null;
+        }
+
+        // JTS may return inverted min/max for some invalid envelopes
+        if (south > north) {
+            double tmp = south;
+            south = north;
+            north = tmp;
+        }
+        if (west > east) {
+            double tmp = west;
+            west = east;
+            east = tmp;
+        }
+
+        double latPad = calculateLatStep(precision) / 2.0;
+        double lonPad = calculateLonStep(precision) / 2.0;
+
+        // Point or line with zero thickness — pad so at least one cell is scanned
+        if (south == north) {
+            south -= latPad;
+            north += latPad;
+        } else {
+            south = includeTouchingLowerCell(south, latPad * 2.0, 90.0);
+        }
+        if (west == east) {
+            west -= lonPad;
+            east += lonPad;
+        } else {
+            west = includeTouchingLowerCell(west, lonPad * 2.0, 180.0);
+        }
+
+        south = Math.max(-90.0, south);
+        north = Math.min(90.0, north);
+        west = Math.max(-180.0, west);
+        east = Math.min(180.0, east);
+
+        if (south > north || west > east) {
+            return null;
+        }
+
+        return new BoundingBox(south, north, west, east);
+    }
+
+    private static double includeTouchingLowerCell(double coordinate, double step, double origin) {
+        double index = (coordinate + origin) / step;
+        if (coordinate > -origin && coordinate < origin && index == Math.rint(index)) {
+            // Use the neighboring cell's center. A one-ULP decrement can round
+            // back onto the boundary when the geohash encoder adds its origin.
+            return coordinate - step / 2.0;
+        }
+        return coordinate;
+    }
+
+    private Set<String> cellsFromGeometryCentroid(Geometry geometry, int precision) {
+        Set<String> cells = new HashSet<>();
+        org.locationtech.jts.geom.Point centroid = geometry.getCentroid();
+        if (centroid == null || Double.isNaN(centroid.getY()) || Double.isNaN(centroid.getX())) {
+            return cells;
+        }
+        cells.add(GeoHash.withCharacterPrecision(centroid.getY(), centroid.getX(), precision).toBase32());
+        return cells;
+    }
+
+    private void collectPriorityCells(Geometry geometry, int precision, Set<String> priorityCells) {
+        if (geometry == null || priorityCells == null) {
             return;
         }
-
-        // Handle different geometry types
-        if (geometry instanceof org.locationtech.jts.geom.Point) {
-            processPoint((org.locationtech.jts.geom.Point) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        } else if (geometry instanceof LineString) {
-            processLineString((LineString) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        } else if (geometry instanceof Polygon) {
-            processPolygon((Polygon) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        } else if (geometry instanceof MultiPoint) {
-            processMultiPoint((MultiPoint) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        } else if (geometry instanceof MultiLineString) {
-            processMultiLineString((MultiLineString) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        } else if (geometry instanceof MultiPolygon) {
-            processMultiPolygon((MultiPolygon) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        } else if (geometry instanceof GeometryCollection) {
-            processGeometryCollection((GeometryCollection) geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+        for (Coordinate coordinate : geometry.getCoordinates()) {
+            if (coordinate == null
+                    || !Double.isFinite(coordinate.x)
+                    || !Double.isFinite(coordinate.y)
+                    || coordinate.x < -180.0
+                    || coordinate.x > 180.0
+                    || coordinate.y < -90.0
+                    || coordinate.y > 90.0) {
+                continue;
+            }
+            priorityCells.add(GeoHash.withCharacterPrecision(
+                    coordinate.y, coordinate.x, precision).toBase32());
         }
     }
 
-    /**
-     * Process a point with filtering
-     */
-    private void processPoint(org.locationtech.jts.geom.Point point, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        double lat = point.getY();
-        double lon = point.getX();
-        processCoordinate(lat, lon, gridPrecision, gridSize,
-                latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+    private boolean geometryIntersectsGeohashCell(PreparedGeometry prepared, GeoHash cell) {
+        BoundingBox bb = cell.getBoundingBox();
+        org.locationtech.jts.geom.Polygon cellPolygon = geometryFactory.createPolygon(new Coordinate[] {
+                new Coordinate(bb.getWestLongitude(), bb.getSouthLatitude()),
+                new Coordinate(bb.getEastLongitude(), bb.getSouthLatitude()),
+                new Coordinate(bb.getEastLongitude(), bb.getNorthLatitude()),
+                new Coordinate(bb.getWestLongitude(), bb.getNorthLatitude()),
+                new Coordinate(bb.getWestLongitude(), bb.getSouthLatitude())
+        });
+        return prepared.intersects(cellPolygon);
     }
 
-    /**
-     * Process a LineString with filtering
-     */
-    private void processLineString(LineString lineString, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        Coordinate[] coordinates = lineString.getCoordinates();
-
-        // Process each coordinate
-        for (Coordinate coord : coordinates) {
-            processCoordinate(coord.y, coord.x, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+    private void addPriorityRepresentatives(
+            List<String> selected,
+            List<long[]> selectedIndices,
+            Set<String> priorityCells,
+            Set<String> intersectingCells,
+            Set<String> existingUsed,
+            boolean allowSharing,
+            double latStep,
+            double lonStep) {
+        if (priorityCells == null) {
+            return;
         }
-
-        // Process interpolated points for better coverage
-        for (int i = 0; i < coordinates.length - 1; i++) {
-            Coordinate start = coordinates[i];
-            Coordinate end = coordinates[i + 1];
-
-            int numPoints = calculateInterpolationPoints(start, end);
-            for (int j = 1; j < numPoints; j++) {
-                double ratio = (double) j / numPoints;
-                double lat = start.y + (end.y - start.y) * ratio;
-                double lon = start.x + (end.x - start.x) * ratio;
-                processCoordinate(lat, lon, gridPrecision, gridSize,
-                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+        for (String cell : priorityCells) {
+            if (selected.contains(cell)
+                    || !intersectingCells.contains(cell)
+                    || !isCellAvailable(cell, existingUsed, allowSharing)) {
+                continue;
+            }
+            long[] indices = cellIndices(GeoHash.fromGeohashString(cell), latStep, lonStep);
+            if (isSeparatedFromAll(indices, selectedIndices, SUPPLEMENT_MIN_CELL_SEPARATION)) {
+                selected.add(cell);
+                selectedIndices.add(indices);
+                enforceMaximumGeohashCount(selected);
             }
         }
     }
 
     /**
-     * Process a polygon with filtering
+     * Pick one representative per {@code blockSize}×{@code blockSize} tile of the
+     * requested-precision cell grid, preferring the uncovered cell closest to each
+     * tile centre.
+     *
+     * <p>Blocks are processed nearest-centroid-first so that central
+     * representatives are placed before edge blocks. A block is skipped only when
+     * every intersecting cell in it is already inside an existing representative's
+     * 3×3 coverage zone. Uncovered blocks still receive a representative even when
+     * that cell is only {@code COVERAGE_RADIUS + 1} away from a prior pick.
      */
-    private void processPolygon(Polygon polygon, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        // Process exterior ring
-        Coordinate[] exteriorCoords = polygon.getExteriorRing().getCoordinates();
-        for (Coordinate coord : exteriorCoords) {
-            processCoordinate(coord.y, coord.x, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        }
+    private void selectOnePerBlock(
+            Set<String> intersectingCells,
+            Set<String> existingUsed,
+            boolean allowSharing,
+            double latStep,
+            double lonStep,
+            int blockSize,
+            List<String> selected,
+            List<long[]> selectedIndices,
+            Map<String, long[]> indicesByCell) {
+        Map<String, List<String>> blocks = groupCellsByBlock(intersectingCells, latStep, lonStep, blockSize);
 
-        // Process interior rings (holes)
-        for (int i = 0; i < polygon.getNumInteriorRing(); i++) {
-            Coordinate[] interiorCoords = polygon.getInteriorRingN(i).getCoordinates();
-            for (Coordinate coord : interiorCoords) {
-                processCoordinate(coord.y, coord.x, gridPrecision, gridSize,
-                        latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+        // Process blocks nearest to the overall centroid first so that central
+        // representatives are placed before edge blocks compete for nearby cells.
+        double[] centroid = centroidOfCells(intersectingCells);
+        List<Map.Entry<String, List<String>>> sortedBlocks = new ArrayList<>(blocks.entrySet());
+        sortedBlocks.sort(Comparator.comparingDouble(e -> {
+            long[] bi = parseBlockKey(e.getKey());
+            double bLat = blockCenterCoordinate(bi[0], blockSize, latStep, 90.0);
+            double bLon = blockCenterCoordinate(bi[1], blockSize, lonStep, 180.0);
+            double dLat = bLat - centroid[0];
+            double dLon = bLon - centroid[1];
+            return dLat * dLat + dLon * dLon;
+        }));
+
+        Set<String> selectedSet = new HashSet<>(selected);
+        for (Map.Entry<String, List<String>> entry : sortedBlocks) {
+            if (everyIntersectingCellIsCovered(entry.getValue(), selectedIndices, indicesByCell)) {
+                continue;
             }
-        }
 
-        // Process interpolated points for better coverage
-        processPolygonInterpolation(polygon, gridPrecision, gridSize,
-                latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-    }
+            long[] blockIndices = parseBlockKey(entry.getKey());
+            double blockCenterLat = blockCenterCoordinate(blockIndices[0], blockSize, latStep, 90.0);
+            double blockCenterLon = blockCenterCoordinate(blockIndices[1], blockSize, lonStep, 180.0);
 
-    /**
-     * Process multi-geometry types
-     */
-    private void processMultiPoint(MultiPoint multiPoint, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        for (int i = 0; i < multiPoint.getNumGeometries(); i++) {
-            org.locationtech.jts.geom.Point point = (org.locationtech.jts.geom.Point) multiPoint.getGeometryN(i);
-            processPoint(point, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        }
-    }
-
-    private void processMultiLineString(MultiLineString multiLineString, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        for (int i = 0; i < multiLineString.getNumGeometries(); i++) {
-            LineString lineString = (LineString) multiLineString.getGeometryN(i);
-            processLineString(lineString, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        }
-    }
-
-    private void processMultiPolygon(MultiPolygon multiPolygon, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        for (int i = 0; i < multiPolygon.getNumGeometries(); i++) {
-            Polygon polygon = (Polygon) multiPolygon.getGeometryN(i);
-            processPolygon(polygon, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-        }
-    }
-
-    private void processGeometryCollection(GeometryCollection geometryCollection, int gridPrecision,
-            int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        for (int i = 0; i < geometryCollection.getNumGeometries(); i++) {
-            Geometry geometry = geometryCollection.getGeometryN(i);
-            processJTSGeometry(geometry, gridPrecision, gridSize,
-                    latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
+            entry.getValue().stream()
+                    .filter(cell -> !selectedSet.contains(cell))
+                    .filter(cell -> isCellAvailable(cell, existingUsed, allowSharing))
+                    .filter(cell -> !isCellCovered(indicesByCell.get(cell), selectedIndices))
+                    .min(Comparator.comparingDouble(cell -> distanceToPoint(cell, blockCenterLat, blockCenterLon)))
+                    .ifPresent(cell -> {
+                        selected.add(cell);
+                        selectedSet.add(cell);
+                        selectedIndices.add(indicesByCell.get(cell));
+                        enforceMaximumGeohashCount(selected);
+                    });
         }
     }
 
     /**
-     * Process a single coordinate with filtering - this is the core filtering logic
+     * Greedy set cover for any intersecting cell still outside every selected 3×3.
+     * Prefers nonadjacent candidates, then the most remaining holes and the
+     * shortest distance to the block centre. Already-covered candidates remain
+     * eligible when occupied cells prevent a nonadjacent selection.
      */
-    private void processCoordinate(double lat, double lon, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        try {
-            // Generate the geohash for this coordinate
-            String geohash = encodeGeohash(lat, lon, gridPrecision);
+    private void fillCoverageGaps(
+            List<String> selected,
+            List<long[]> selectedIndices,
+            Set<String> intersectingCells,
+            Set<String> existingUsed,
+            boolean allowSharing,
+            double latStep,
+            double lonStep,
+            Map<String, long[]> indicesByCell) {
+        Set<String> selectedSet = new HashSet<>(selected);
+        Map<CellIndex, String> cellsByIndex = new HashMap<>();
+        for (Map.Entry<String, long[]> entry : indicesByCell.entrySet()) {
+            long[] index = entry.getValue();
+            cellsByIndex.put(new CellIndex(index[0], index[1]), entry.getKey());
+        }
 
-            // Skip if this geohash is already covered by a previous 3x3 grid
-            if (affectedGeohashes.contains(geohash)) {
+        // Track coverage incrementally. Re-scanning all intersecting cells against
+        // every selected representative on each greedy iteration makes fragmented
+        // regions expensive.
+        Set<String> coveredCells = new HashSet<>();
+        for (long[] selectedIndex : selectedIndices) {
+            addNeighboringCells(selectedIndex, cellsByIndex, coveredCells);
+        }
+        Set<String> uncovered = new HashSet<>(intersectingCells);
+        uncovered.removeAll(coveredCells);
+
+        while (true) {
+            if (uncovered.isEmpty()) {
                 return;
             }
 
-            // Generate the 3x3 grid around this coordinate
-            List<String> gridGeohashes = generate3x3GridOptimized(lat, lon, gridPrecision, gridSize, latStep, lonStep);
-
-            // Check if any of the geohashes in this grid are already covered
-            boolean hasOverlap = false;
-            for (String gridGeohash : gridGeohashes) {
-                if (affectedGeohashes.contains(gridGeohash)) {
-                    hasOverlap = true;
-                    break;
-                }
-            }
-
-            // Only add this representative if there's no overlap with grids in this run
-            if (!hasOverlap) {
-                // Choose a representative geohash, preferring center but avoiding already-used
-                // ones
-                String chosen = null;
-                // Center first
-                if ((existingUsedGeohashes == null || !existingUsedGeohashes.contains(geohash))
-                        && !representativeGeohashes.contains(geohash)) {
-                    chosen = geohash;
-                } else {
-                    // Try neighbors not in existing used set
-                    for (String candidate : gridGeohashes) {
-                        if (candidate.equals(geohash)) {
-                            continue;
-                        }
-                        if ((existingUsedGeohashes == null || !existingUsedGeohashes.contains(candidate))
-                                && !representativeGeohashes.contains(candidate)) {
-                            chosen = candidate;
-                            break;
+            // Every candidate that covers a hole must be in its 3×3 neighborhood.
+            // Count those candidates from a grid index instead of comparing every
+            // candidate with every uncovered cell.
+            Map<String, Integer> coveredCounts = new HashMap<>();
+            for (String hole : uncovered) {
+                long[] holeIndex = indicesByCell.get(hole);
+                for (long latitudeOffset = -COVERAGE_RADIUS; latitudeOffset <= COVERAGE_RADIUS; latitudeOffset++) {
+                    for (long longitudeOffset = -COVERAGE_RADIUS; longitudeOffset <= COVERAGE_RADIUS; longitudeOffset++) {
+                        String candidate = cellsByIndex.get(new CellIndex(
+                                holeIndex[0] + latitudeOffset, holeIndex[1] + longitudeOffset));
+                        if (candidate != null) {
+                            coveredCounts.merge(candidate, 1, Integer::sum);
                         }
                     }
                 }
-                // If all 3x3 candidates are already used, fail immediately
-                if (chosen == null) {
-                    throw new NoAvailableGeohashException(
-                            "No available representative geohash for 3x3 grid at lat=" + lat
-                                    + ", lon=" + lon);
-                }
-                // Mark all geohashes in this grid as affected and record representative
-                affectedGeohashes.addAll(gridGeohashes);
-                representativeGeohashes.add(chosen);
             }
-        } catch (NoAvailableGeohashException e) {
-            log.warn("No available representative geohash: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.warn("Error processing coordinate ({}, {}) with filtering: {}", lat, lon, e.getMessage());
-            throw new NoAvailableGeohashException(e.getMessage(), e);
+
+            // Only cells that cover at least one hole are eligible, and every key of
+            // coveredCounts is an intersecting cell. Ties break on geohash order so the
+            // choice does not depend on HashMap iteration order.
+            String best = null;
+            int bestCovered = 0;
+            double bestDistance = Double.POSITIVE_INFINITY;
+            boolean bestIsCovered = true;
+            for (Map.Entry<String, Integer> entry : coveredCounts.entrySet()) {
+                String candidate = entry.getKey();
+                int coveredCount = entry.getValue();
+                if (selectedSet.contains(candidate)
+                        || !isCellAvailable(candidate, existingUsed, allowSharing)) {
+                    continue;
+                }
+                long[] candidateIdx = indicesByCell.get(candidate);
+                double blockCenterLat = blockCenterCoordinate(
+                        Math.floorDiv(candidateIdx[0], PRIMARY_BLOCK_SIZE), PRIMARY_BLOCK_SIZE, latStep, 90.0);
+                double blockCenterLon = blockCenterCoordinate(
+                        Math.floorDiv(candidateIdx[1], PRIMARY_BLOCK_SIZE), PRIMARY_BLOCK_SIZE, lonStep, 180.0);
+                double distance = distanceToPoint(candidate, blockCenterLat, blockCenterLon);
+                boolean candidateIsCovered = coveredCells.contains(candidate);
+                if (best == null || (bestIsCovered && !candidateIsCovered)
+                        || (bestIsCovered == candidateIsCovered
+                            && (coveredCount > bestCovered
+                                || (coveredCount == bestCovered && distance < bestDistance)
+                                || (coveredCount == bestCovered && distance == bestDistance
+                                    && candidate.compareTo(best) < 0)))) {
+                    best = candidate;
+                    bestCovered = coveredCount;
+                    bestDistance = distance;
+                    bestIsCovered = candidateIsCovered;
+                }
+            }
+            if (best == null) {
+                throw new NoAvailableGeohashException(
+                        "Cannot cover " + uncovered.size() + " intersecting cells with available geohashes");
+            }
+            selected.add(best);
+            selectedSet.add(best);
+            long[] selectedIndex = indicesByCell.get(best);
+            selectedIndices.add(selectedIndex);
+            enforceMaximumGeohashCount(selected);
+            addNeighboringCells(selectedIndex, cellsByIndex, coveredCells);
+            uncovered.removeAll(coveredCells);
         }
     }
 
     /**
-     * Generate a 3x3 grid with pre-calculated step sizes for better performance
+     * Greedy supplement for small regions: add cells from finer 3×3 tiles until
+     * {@code minGeohashes} is reached, keeping Chebyshev separation from all
+     * already-selected cells.
      */
-    private List<String> generate3x3GridOptimized(double latitude, double longitude, int precision, int gridSize,
-            double latStep, double lonStep) {
-        List<String> geohashes = new ArrayList<>(gridSize * gridSize);
-
-        // Calculate the offset to center the grid around the given point
-        int halfGrid = gridSize / 2;
-        double startLat = latitude - (halfGrid * latStep);
-        double startLon = longitude - (halfGrid * lonStep);
-
-        // Generate the grid
-        for (int i = 0; i < gridSize; i++) {
-            double currentLat = startLat + (i * latStep);
-            currentLat = Math.max(-90.0, Math.min(90.0, currentLat));
-
-            for (int j = 0; j < gridSize; j++) {
-                double currentLon = startLon + (j * lonStep);
-                currentLon = Math.max(-180.0, Math.min(180.0, currentLon));
-
-                geohashes.add(encodeGeohash(currentLat, currentLon, precision));
-            }
+    private void supplementToMinimum(
+            List<String> selected,
+            Set<String> intersectingCells,
+            Set<String> existingUsed,
+            boolean allowSharing,
+            double latStep,
+            double lonStep,
+            int minGeohashes) {
+        List<long[]> selectedIndices = new ArrayList<>();
+        for (String cell : selected) {
+            selectedIndices.add(cellIndices(GeoHash.fromGeohashString(cell), latStep, lonStep));
         }
 
-        return geohashes;
+        Set<String> selectedSet = new HashSet<>(selected);
+        double[] centroid = centroidOfCells(intersectingCells);
+        List<String> candidates = intersectingCells.stream()
+                .filter(cell -> !selectedSet.contains(cell))
+                .filter(cell -> isCellAvailable(cell, existingUsed, allowSharing))
+                .sorted(Comparator.comparingDouble(cell -> distanceToPoint(cell, centroid[0], centroid[1])))
+                .toList();
+
+        for (String cell : candidates) {
+            if (selected.size() >= minGeohashes) {
+                break;
+            }
+            long[] idx = cellIndices(GeoHash.fromGeohashString(cell), latStep, lonStep);
+            if (isSeparatedFromAll(idx, selectedIndices, SUPPLEMENT_MIN_CELL_SEPARATION)) {
+                selected.add(cell);
+                selectedIndices.add(idx);
+                enforceMaximumGeohashCount(selected);
+            }
+        }
+    }
+
+    private void enforceMaximumGeohashCount(List<String> selected) {
+        int maxGeohashes = geofenceProperties.getLimits().getMaxGeohashes();
+        if (selected.size() > maxGeohashes) {
+            throw new GeofenceTooLargeException(
+                    "Deployment region is too large: selected geohash count " + selected.size()
+                            + " exceeds the configured maximum of " + maxGeohashes
+                            + " (geofence.limits.max-geohashes)");
+        }
+    }
+
+    private void addNeighboringCells(
+            long[] center, Map<CellIndex, String> cellsByIndex, Set<String> destination) {
+        for (long latitudeOffset = -COVERAGE_RADIUS; latitudeOffset <= COVERAGE_RADIUS; latitudeOffset++) {
+            for (long longitudeOffset = -COVERAGE_RADIUS; longitudeOffset <= COVERAGE_RADIUS; longitudeOffset++) {
+                String cell = cellsByIndex.get(new CellIndex(
+                        center[0] + latitudeOffset, center[1] + longitudeOffset));
+                if (cell != null) {
+                    destination.add(cell);
+                }
+            }
+        }
+    }
+
+    private record CellIndex(long latitude, long longitude) {
+    }
+
+    private Map<String, List<String>> groupCellsByBlock(
+            Set<String> cells, double latStep, double lonStep, int blockSize) {
+        Map<String, List<String>> blocks = new LinkedHashMap<>();
+        for (String cell : cells) {
+            long[] idx = cellIndices(GeoHash.fromGeohashString(cell), latStep, lonStep);
+            String key = blockKey(
+                    Math.floorDiv(idx[0], blockSize),
+                    Math.floorDiv(idx[1], blockSize));
+            blocks.computeIfAbsent(key, k -> new ArrayList<>()).add(cell);
+        }
+        return blocks;
+    }
+
+    private long[] cellIndices(GeoHash cell, double latStep, double lonStep) {
+        BoundingBox bb = cell.getBoundingBox();
+        long latIdx = (long) Math.floor((bb.getSouthLatitude() + 90.0) / latStep);
+        long lonIdx = (long) Math.floor((bb.getWestLongitude() + 180.0) / lonStep);
+        return new long[] { latIdx, lonIdx };
+    }
+
+    private String blockKey(long blockLat, long blockLon) {
+        return blockLat + ":" + blockLon;
+    }
+
+    private long[] parseBlockKey(String key) {
+        String[] parts = key.split(":");
+        return new long[] { Long.parseLong(parts[0]), Long.parseLong(parts[1]) };
+    }
+
+    private double blockCenterCoordinate(long blockIndex, int blockSize, double step, double originOffset) {
+        return (blockIndex * blockSize + (blockSize / 2.0)) * step - originOffset;
+    }
+
+    private double distanceToPoint(String geohash, double lat, double lon) {
+        GeoHash cell = GeoHash.fromGeohashString(geohash);
+        WGS84Point center = cell.getBoundingBoxCenter();
+        double dLat = center.getLatitude() - lat;
+        double dLon = center.getLongitude() - lon;
+        return dLat * dLat + dLon * dLon;
+    }
+
+    private double[] centroidOfCells(Set<String> cells) {
+        double sumLat = 0;
+        double sumLon = 0;
+        int count = 0;
+        for (String cell : cells) {
+            WGS84Point center = GeoHash.fromGeohashString(cell).getBoundingBoxCenter();
+            sumLat += center.getLatitude();
+            sumLon += center.getLongitude();
+            count++;
+        }
+        if (count == 0) {
+            return new double[] { 0, 0 };
+        }
+        return new double[] { sumLat / count, sumLon / count };
+    }
+
+    private boolean isCellAvailable(String cell, Set<String> existingUsed, boolean allowSharing) {
+        return allowSharing || !existingUsed.contains(cell);
+    }
+
+    private Map<String, long[]> cellIndexMap(Set<String> cells, double latStep, double lonStep) {
+        Map<String, long[]> indicesByCell = new HashMap<>();
+        for (String cell : cells) {
+            indicesByCell.put(cell, cellIndices(GeoHash.fromGeohashString(cell), latStep, lonStep));
+        }
+        return indicesByCell;
     }
 
     /**
-     * Process polygon interpolation
+     * True when every listed cell sits inside some selected representative's 3×3
+     * neighborhood (Chebyshev {@code <= COVERAGE_RADIUS}).
      */
-    private void processPolygonInterpolation(Polygon polygon, int gridPrecision, int gridSize,
-            double latStep, double lonStep, Set<String> affectedGeohashes, List<String> representativeGeohashes,
-            Set<String> existingUsedGeohashes) {
-        try {
-            // Get the bounding box
-            Envelope envelope = polygon.getEnvelopeInternal();
-
-            // Generate geohashes in a grid pattern and filter by polygon intersection
-            for (double lat = envelope.getMinY(); lat <= envelope.getMaxY(); lat += latStep) {
-                for (double lon = envelope.getMinX(); lon <= envelope.getMaxX(); lon += lonStep) {
-                    // Create a point for intersection testing
-                    org.locationtech.jts.geom.Point point = geometryFactory.createPoint(new Coordinate(lon, lat));
-
-                    // Check if the point intersects with the polygon
-                    if (polygon.contains(point) || polygon.intersects(point)) {
-                        processCoordinate(lat, lon, gridPrecision, gridSize,
-                                latStep, lonStep, affectedGeohashes, representativeGeohashes, existingUsedGeohashes);
-                    }
-                }
+    private boolean everyIntersectingCellIsCovered(
+            Iterable<String> cells, List<long[]> selectedIndices, Map<String, long[]> indicesByCell) {
+        for (String cell : cells) {
+            if (!isCellCovered(indicesByCell.get(cell), selectedIndices)) {
+                return false;
             }
-        } catch (NoAvailableGeohashException e) {
-            log.warn("Error in polygon interpolation with filtering: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.warn("Error in polygon interpolation with filtering: {}", e.getMessage());
-            throw new NoAvailableGeohashException(e.getMessage(), e);
         }
+        return true;
+    }
+
+    private boolean isCellCovered(long[] cellIdx, List<long[]> selectedIndices) {
+        if (cellIdx == null) {
+            return false;
+        }
+        for (long[] selected : selectedIndices) {
+            if (chebyshevDistance(cellIdx, selected) <= COVERAGE_RADIUS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private long chebyshevDistance(long[] first, long[] second) {
+        return Math.max(Math.abs(first[0] - second[0]), Math.abs(first[1] - second[1]));
+    }
+
+    private boolean isSeparatedFromAll(long[] candidateIdx, List<long[]> selectedIndices, int minSeparation) {
+        for (long[] selected : selectedIndices) {
+            if (chebyshevDistance(candidateIdx, selected) < minSeparation) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -909,6 +1416,8 @@ public class GeohashUtils {
         } else if (geometry instanceof usdot.v2x.app.api.models.etx.configuration.geometry.LineString) {
             return createJtsLineStringFromCustomLineString(
                     (usdot.v2x.app.api.models.etx.configuration.geometry.LineString) geometry);
+        } else if (geometry instanceof usdot.v2x.app.api.models.etx.configuration.geometry.MultiPolygon) {
+            return GeometryConverter.toJtsGeometry(geometry);
         }
         // Add other geometry types as needed
         return null;
