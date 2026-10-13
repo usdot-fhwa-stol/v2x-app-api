@@ -302,6 +302,19 @@ public class GeohashUtils {
     }
 
     /**
+     * Count the 3×3 representatives an override would deploy, for threshold
+     * checks. Unlike the public extraction overloads, this propagates
+     * {@link NoAvailableGeohashException} and {@link GeofenceTooLargeException}
+     * unchanged, wraps other geometry failures in a {@link RuntimeException}
+     * and does not write to the error log.
+     */
+    public int countRepresentativeGeohashes(
+            GeofenceFeatureCollection geofenceFeatureCollection, int precision) {
+        return extractGeofenceFeatureCollectionInternal(
+                geofenceFeatureCollection, precision, Set.of(), true).size();
+    }
+
+    /**
      * Create JTS Polygon from custom Polygon POJO
      */
     private org.locationtech.jts.geom.Polygon createJtsPolygonFromCustomPolygon(

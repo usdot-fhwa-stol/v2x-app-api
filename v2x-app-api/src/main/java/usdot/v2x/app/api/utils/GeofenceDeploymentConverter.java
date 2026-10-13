@@ -8,6 +8,7 @@ import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
 import usdot.v2x.app.api.models.geofence.GeohashPreviewResponse;
+import usdot.v2x.app.api.exceptions.GeofenceTooLargeException;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
 
@@ -55,6 +56,7 @@ public class GeofenceDeploymentConverter {
     private final TimCoordinateConverter timCoordinateConverter;
     private final MapCoordinateConverter mapCoordinateConverter;
     private final GeofenceProperties geofenceProperties;
+    private final OverrideGeofenceResolver overrideGeofenceResolver;
 
     public GeofenceDeploymentConverter(@Qualifier("xmlMapper") XmlMapper xmlMapper,
             GeohashUtils geohashUtils,
@@ -63,7 +65,8 @@ public class GeofenceDeploymentConverter {
             MessageTypeService messageTypeService,
             @Autowired(required = false) TimCoordinateConverter timCoordinateConverter,
             @Autowired(required = false) MapCoordinateConverter mapCoordinateConverter,
-            GeofenceProperties geofenceProperties) {
+            GeofenceProperties geofenceProperties,
+            OverrideGeofenceResolver overrideGeofenceResolver) {
         this.xmlMapper = xmlMapper;
         this.geohashUtils = geohashUtils;
         this.codec = codec;
@@ -72,6 +75,7 @@ public class GeofenceDeploymentConverter {
         this.timCoordinateConverter = timCoordinateConverter;
         this.mapCoordinateConverter = mapCoordinateConverter;
         this.geofenceProperties = geofenceProperties;
+        this.overrideGeofenceResolver = overrideGeofenceResolver;
     }
 
     /**
@@ -205,8 +209,21 @@ public class GeofenceDeploymentConverter {
 
     private GeohashSelection resolveAndSelectGeohashes(GeofenceFeatureCollection override,
             MessageFrame<?> messageFrame, String geofenceId, boolean checkConflicts) {
-        GeofenceFeatureCollection geofence = override != null ? override : extractGeofenceFromMessage(messageFrame);
-        return selectGeohashes(geofence, geofenceId, checkConflicts, true);
+        OverrideGeofenceResolver.Resolution resolution = overrideGeofenceResolver.resolveWithSource(
+                override, () -> extractGeofenceFromMessage(messageFrame));
+        GeofenceFeatureCollection geofence = resolution.geofence();
+        boolean usedOverride = resolution.usedOverride();
+        try {
+            return selectGeohashes(geofence, geofenceId, checkConflicts, !usedOverride);
+        } catch (GeofenceTooLargeException e) {
+            if (!usedOverride) {
+                throw e;
+            }
+            // The threshold counts representatives, but a kept MQTT override
+            // persists every intersecting cell. Apply the fallback to this limit too.
+            log.info("Retained override exceeds MQTT geohash limits; generating geofence from message");
+            return selectGeohashes(extractGeofenceFromMessage(messageFrame), geofenceId, checkConflicts, true);
+        }
     }
 
     private GeohashSelection selectGeohashes(GeofenceFeatureCollection geofence,
