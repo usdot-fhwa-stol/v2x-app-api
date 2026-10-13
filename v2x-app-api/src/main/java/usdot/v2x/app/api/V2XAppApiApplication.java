@@ -10,6 +10,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import java.util.TimeZone;
+
 /**
  * Main Spring Boot application class for the V2X Application API.
  */
@@ -31,7 +33,16 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class V2XAppApiApplication {
 
     public static void main(String[] args) {
+        useUtcDefaultTimeZone();
         SpringApplication.run(V2XAppApiApplication.class, args);
+    }
+
+    /**
+     * JdbcTemplate timestamp binds and the PostgreSQL session time zone follow the
+     * JVM default, while Hibernate is pinned to UTC; align them.
+     */
+    static void useUtcDefaultTimeZone() {
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
     }
 
 }
