@@ -3,15 +3,20 @@ package usdot.v2x.app.api.etx.configuration;
 import static net.javacrumbs.jsonunit.JsonMatchers.jsonEquals;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 
 import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofence;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceResponse;
 import usdot.v2x.app.api.models.etx.configuration.ConfigurationGeofenceSummary;
 import usdot.v2x.app.api.models.etx.configuration.geofence.DistributionType;
+import usdot.v2x.app.api.utils.GeohashUtils;
+import usdot.v2x.app.api.utils.OverrideGeofenceResolver;
 import usdot.v2x.app.api.utils.TimCoordinateConverter;
 import usdot.v2x.app.api.utils.MapCoordinateConverter;
 import org.locationtech.jts.geom.Coordinate;
@@ -24,9 +29,12 @@ import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import usdot.v2x.app.api.config.GeofenceProperties;
 import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.etx.TokenService;
 import usdot.v2x.app.api.etx.TokenStore;
+import usdot.v2x.app.api.exceptions.GeofenceTooLargeException;
+import usdot.v2x.app.api.services.ErrorLoggingService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +44,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.DefaultUriBuilderFactory;
 import org.springframework.web.util.UriBuilder;
@@ -718,6 +727,189 @@ public class ConfigurationApiTest {
         assertEquals(1, geoFence.get("features").size());
         assertEquals("Feature", geoFence.get("features").get(0).get("type").asText());
         assertEquals("Polygon", geoFence.get("features").get(0).get("geometry").get("type").asText());
+    }
+
+    @Test
+    public void testDeposit_OverrideWithinGeohashThreshold_UsesOverride() throws Exception {
+        GeohashUtils geohashUtils = org.mockito.Mockito.mock(GeohashUtils.class);
+        GeofenceProperties geofenceProperties = new GeofenceProperties();
+        geofenceProperties.getLimits().setOverrideGeohashThreshold(50);
+        when(geohashUtils.countRepresentativeGeohashes(any(), anyInt())).thenReturn(4);
+        OverrideGeofenceResolver resolver = new OverrideGeofenceResolver(geohashUtils, geofenceProperties);
+
+        configurationApi = new ConfigurationApi(etxProperties, tokenService, webClientBuilder, codec,
+                objectMapper, xmlMapper, clock, timConverter, mapConverter, resolver);
+
+        DepositRequest request = depositRequestWithOverrideGeofence();
+        stubSuccessfulTimDeposit();
+
+        StepVerifier.create(configurationApi.deposit(request))
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
+
+        JsonNode geoFence = postedGeofenceJson().get("geoFence");
+        JsonNode firstCoord = geoFence.get("features").get(0).get("geometry").get("coordinates").get(0).get(0);
+        assertEquals(-122.4194, firstCoord.get(0).asDouble(), 0.0001);
+        assertEquals(37.7749, firstCoord.get(1).asDouble(), 0.0001);
+    }
+
+    @Test
+    public void testDeposit_OverrideExceedsGeohashThreshold_GeneratesFromMessage() throws Exception {
+        GeohashUtils geohashUtils = org.mockito.Mockito.mock(GeohashUtils.class);
+        GeofenceProperties geofenceProperties = new GeofenceProperties();
+        geofenceProperties.getLimits().setOverrideGeohashThreshold(50);
+        when(geohashUtils.countRepresentativeGeohashes(any(), anyInt())).thenReturn(51);
+        OverrideGeofenceResolver resolver = new OverrideGeofenceResolver(geohashUtils, geofenceProperties);
+
+        configurationApi = new ConfigurationApi(etxProperties, tokenService, webClientBuilder, codec,
+                objectMapper, xmlMapper, clock, timConverter, mapConverter, resolver);
+
+        DepositRequest request = depositRequestWithOverrideGeofence();
+        stubSuccessfulTimDeposit();
+        stubGeneratedTimGeometry();
+
+        StepVerifier.create(configurationApi.deposit(request))
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
+
+        JsonNode geoFence = postedGeofenceJson().get("geoFence");
+        JsonNode firstCoord = geoFence.get("features").get(0).get("geometry").get("coordinates").get(0).get(0);
+        assertEquals(0.0, firstCoord.get(0).asDouble(), 0.0001);
+        assertEquals(0.0, firstCoord.get(1).asDouble(), 0.0001);
+    }
+
+    @Test
+    public void testDeposit_OverrideGeofenceTooLarge_GeneratesFromMessage() throws Exception {
+        GeohashUtils geohashUtils = org.mockito.Mockito.mock(GeohashUtils.class);
+        GeofenceProperties geofenceProperties = new GeofenceProperties();
+        geofenceProperties.getLimits().setOverrideGeohashThreshold(50);
+        when(geohashUtils.countRepresentativeGeohashes(any(), anyInt()))
+                .thenThrow(new GeofenceTooLargeException("too many candidate cells"));
+        OverrideGeofenceResolver resolver = new OverrideGeofenceResolver(geohashUtils, geofenceProperties);
+
+        configurationApi = new ConfigurationApi(etxProperties, tokenService, webClientBuilder, codec,
+                objectMapper, xmlMapper, clock, timConverter, mapConverter, resolver);
+
+        DepositRequest request = depositRequestWithOverrideGeofence();
+        stubSuccessfulTimDeposit();
+        stubGeneratedTimGeometry();
+
+        StepVerifier.create(configurationApi.deposit(request))
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
+
+        JsonNode geoFence = postedGeofenceJson().get("geoFence");
+        JsonNode firstCoord = geoFence.get("features").get(0).get("geometry").get("coordinates").get(0).get(0);
+        assertEquals(0.0, firstCoord.get(0).asDouble(), 0.0001);
+        assertEquals(0.0, firstCoord.get(1).asDouble(), 0.0001);
+    }
+
+    @Test
+    public void testDeposit_OverrideWithoutUsableGeometry_GeneratesFromMessage() throws Exception {
+        ErrorLoggingService errorLoggingService = org.mockito.Mockito.mock(ErrorLoggingService.class);
+        GeofenceProperties geofenceProperties = new GeofenceProperties();
+        geofenceProperties.getLimits().setOverrideGeohashThreshold(50);
+        GeohashUtils geohashUtils = new GeohashUtils(
+                new ObjectMapper(),
+                errorLoggingService,
+                geofenceProperties,
+                org.mockito.Mockito.mock(JdbcTemplate.class));
+        OverrideGeofenceResolver resolver = new OverrideGeofenceResolver(geohashUtils, geofenceProperties);
+
+        configurationApi = new ConfigurationApi(etxProperties, tokenService, webClientBuilder, codec,
+                objectMapper, xmlMapper, clock, timConverter, mapConverter, resolver);
+
+        GeofenceFeatureCollection noFeatures = new GeofenceFeatureCollection();
+        noFeatures.setType("FeatureCollection");
+        noFeatures.setFeatures(List.of());
+        DepositRequest request = depositRequestWithOverrideGeofence();
+        request.setOverrideGeofence(noFeatures);
+        stubSuccessfulTimDeposit();
+        stubGeneratedTimGeometry();
+
+        StepVerifier.create(configurationApi.deposit(request))
+                .expectNextMatches(response -> {
+                    assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+                    return true;
+                })
+                .verifyComplete();
+
+        JsonNode geoFence = postedGeofenceJson().get("geoFence");
+        JsonNode firstCoord = geoFence.get("features").get(0).get("geometry").get("coordinates").get(0).get(0);
+        assertEquals(0.0, firstCoord.get(0).asDouble(), 0.0001);
+        assertEquals(0.0, firstCoord.get(1).asDouble(), 0.0001);
+        verify(errorLoggingService, never()).logErrorFromRequest(eq("GEOHASH_EXTRACTION_ERROR"), any(), any(), any());
+    }
+
+    private DepositRequest depositRequestWithOverrideGeofence() {
+        DepositRequest request = new DepositRequest();
+        request.setAsn1Hex(
+                "001F647010F1E08D442EF0020C6B1A090F775D9B0301C26E26E4F965C75337FFF93F4878F07080A007F92A7BB7F741234E7D1B30EEC882469D9B39C000000004DC4DC9F2CB8EA660BB9BFFFC42082B2E39E415C05B9A08AFC6C6047BD43E00000026087BBAECD8");
+
+        GeofenceFeatureCollection deploymentRegion = new GeofenceFeatureCollection();
+        deploymentRegion.setType("FeatureCollection");
+
+        GeofenceFeature feature = new GeofenceFeature();
+        feature.setType("Feature");
+        feature.setProperties(new HashMap<>());
+
+        usdot.v2x.app.api.models.etx.configuration.geometry.Polygon polygon = new usdot.v2x.app.api.models.etx.configuration.geometry.Polygon();
+        List<List<List<Double>>> coordinates = new ArrayList<>();
+        List<List<Double>> ring = new ArrayList<>();
+        ring.add(Arrays.asList(-122.4194, 37.7749));
+        ring.add(Arrays.asList(-122.4194, 37.7849));
+        ring.add(Arrays.asList(-122.4094, 37.7849));
+        ring.add(Arrays.asList(-122.4094, 37.7749));
+        ring.add(Arrays.asList(-122.4194, 37.7749));
+        coordinates.add(ring);
+        polygon.setCoordinates(coordinates);
+
+        feature.setGeometry(polygon);
+        deploymentRegion.setFeatures(Arrays.asList(feature));
+        request.setOverrideGeofence(deploymentRegion);
+        return request;
+    }
+
+    private void stubSuccessfulTimDeposit() throws Exception {
+        JsonNode sampleTim = objectMapper.readTree(
+                getClass().getResourceAsStream(
+                        "/usdot/v2x/app/api/etx/configuration/SampleDecodedTim.json"));
+        MessageFrame messageFrame = objectMapper.readValue(sampleTim.toString(), MessageFrame.class);
+        String xer = xmlMapper.writeValueAsString(messageFrame);
+        when(codec.uperToXer(any(byte[].class))).thenReturn(xer);
+        when(requestHeadersSpec.exchangeToMono(any()))
+                .thenReturn(Mono.just(List.of()))
+                .thenReturn(Mono.just(new ConfigurationGeofenceResponse()));
+    }
+
+    private void stubGeneratedTimGeometry() {
+        GeometryFactory factory = new GeometryFactory();
+        Coordinate[] coords = new Coordinate[] {
+                new Coordinate(0, 0),
+                new Coordinate(1, 0),
+                new Coordinate(1, 1),
+                new Coordinate(0, 1),
+                new Coordinate(0, 0)
+        };
+        Polygon jtsPolygon = factory.createPolygon(coords);
+        TimCoordinateConverter.TimGeometry geometry = new TimCoordinateConverter.TimGeometry(
+                factory.createLineString(coords), jtsPolygon);
+        when(timConverter.convertTimToCoordinates(any())).thenReturn(geometry);
+    }
+
+    private JsonNode postedGeofenceJson() throws Exception {
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(requestBodySpec).bodyValue(bodyCaptor.capture());
+        return objectMapper.readTree(bodyCaptor.getValue());
     }
 
     @Test
