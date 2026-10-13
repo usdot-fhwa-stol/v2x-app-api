@@ -46,6 +46,7 @@ COPY ./tim_config_files/tim-config.json /tim_config_files/tim-config.json
 COPY ./tim_config_files/tim-icons /tim_config_files/tim-icons
 
 ENTRYPOINT ["java", \ 
+    "-Duser.timezone=UTC", \
     "-Djava.rmi.server.hostname=$DOCKER_HOST_IP", \ 
     "-Djavax.net.ssl.trustStorePassword=changeit", \
     "--enable-native-access=ALL-UNNAMED", "-jar", \

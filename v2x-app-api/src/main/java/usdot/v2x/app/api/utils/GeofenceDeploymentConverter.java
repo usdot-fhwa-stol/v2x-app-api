@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,11 +29,13 @@ import org.locationtech.jts.geom.Polygon;
 /**
  * Utility class for converting between deposit request formats and geofence deployment formats.
  */
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 
+import usdot.v2x.app.api.config.GeofenceProperties;
 import usdot.v2x.app.api.services.MessageTypeService;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
 import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
@@ -43,6 +44,8 @@ import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
 @Slf4j
 public class GeofenceDeploymentConverter {
 
+    private static final Duration DEFAULT_GRACE_PERIOD = Duration.ofHours(2);
+
     private final XmlMapper xmlMapper;
     private final GeohashUtils geohashUtils;
     private final MessageFrameCodec codec;
@@ -50,9 +53,7 @@ public class GeofenceDeploymentConverter {
     private final MessageTypeService messageTypeService;
     private final TimCoordinateConverter timCoordinateConverter;
     private final MapCoordinateConverter mapCoordinateConverter;
-
-    @Value("${tim.expiration.grace-period-hours:2}")
-    private int gracePeriodHours;
+    private final GeofenceProperties geofenceProperties;
 
     public GeofenceDeploymentConverter(@Qualifier("xmlMapper") XmlMapper xmlMapper,
             GeohashUtils geohashUtils,
@@ -60,7 +61,8 @@ public class GeofenceDeploymentConverter {
             @Autowired(required = false) TimExpirationCalculator timExpirationCalculator,
             MessageTypeService messageTypeService,
             @Autowired(required = false) TimCoordinateConverter timCoordinateConverter,
-            @Autowired(required = false) MapCoordinateConverter mapCoordinateConverter) {
+            @Autowired(required = false) MapCoordinateConverter mapCoordinateConverter,
+            GeofenceProperties geofenceProperties) {
         this.xmlMapper = xmlMapper;
         this.geohashUtils = geohashUtils;
         this.codec = codec;
@@ -68,6 +70,7 @@ public class GeofenceDeploymentConverter {
         this.messageTypeService = messageTypeService;
         this.timCoordinateConverter = timCoordinateConverter;
         this.mapCoordinateConverter = mapCoordinateConverter;
+        this.geofenceProperties = geofenceProperties;
     }
 
     /**
@@ -120,13 +123,22 @@ public class GeofenceDeploymentConverter {
         try {
             Instant expirationTime = null;
             if (timExpirationCalculator != null) {
+                Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
+                if (gracePeriod == null) {
+                    gracePeriod = DEFAULT_GRACE_PERIOD;
+                }
+                log.info("Calculating Geofence {} expiration with grace period {}", geofenceId, gracePeriod);
                 expirationTime = timExpirationCalculator.calculateExpirationTime(
-                        configRequest.getAsn1Hex(), gracePeriodHours);
+                        configRequest.getAsn1Hex(), gracePeriod);
             }
 
             if (expirationTime != null) {
                 geofenceRequest.setExpiresAt(expirationTime.toString());
-                log.debug("Calculated expiration time for Geofence {}: {}", geofenceId, expirationTime);
+                log.info("Calculated expiration time for Geofence {}: {}", geofenceId, expirationTime);
+            } else if (timExpirationCalculator != null
+                    && timExpirationCalculator.isNeverExpiring(configRequest.getAsn1Hex())) {
+                log.debug("TIM durationTime is {} minutes for Geofence {}, deployment will not expire",
+                        TimExpirationUtils.NEVER_EXPIRE_DURATION_MINUTES, geofenceId);
             } else {
                 log.warn("Could not calculate expiration time for Geofence {}, will not set expiration",
                         geofenceId);

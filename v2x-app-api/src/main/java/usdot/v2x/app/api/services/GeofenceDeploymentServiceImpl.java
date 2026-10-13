@@ -350,9 +350,14 @@ public class GeofenceDeploymentServiceImpl implements GeofenceDeploymentService 
      * Save Geofence deployment using native query to handle JSONB properly
      */
     private GeofenceDeployment saveGeofenceDeploymentWithJsonb(GeofenceDeployment geofenceDeployment) {
+        Instant now = Instant.now();
+        geofenceDeployment.setCreatedAt(now);
+        geofenceDeployment.setUpdatedAt(now);
+
         String sql = """
-                INSERT INTO geofence_deployments (geofence_id, geojson, msg_type, hex_payload, deployed_by, is_active, expires_at)
-                VALUES (?, ?::jsonb, ?, ?, ?, ?, ?::timestamp)
+                INSERT INTO geofence_deployments
+                    (geofence_id, geojson, msg_type, hex_payload, deployed_by, is_active, expires_at, created_at, updated_at)
+                VALUES (?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id, created_at, updated_at
                 """;
 
@@ -366,8 +371,8 @@ public class GeofenceDeploymentServiceImpl implements GeofenceDeploymentService 
             saved.setDeployedBy(geofenceDeployment.getDeployedBy());
             saved.setIsActive(geofenceDeployment.getIsActive());
             saved.setExpiresAt(geofenceDeployment.getExpiresAt());
-            saved.setCreatedAt(rs.getTimestamp("created_at").toInstant());
-            saved.setUpdatedAt(rs.getTimestamp("updated_at").toInstant());
+            saved.setCreatedAt(readInstant(rs, "created_at"));
+            saved.setUpdatedAt(readInstant(rs, "updated_at"));
             return saved;
         },
                 geofenceDeployment.getGeofenceId(),
@@ -376,8 +381,9 @@ public class GeofenceDeploymentServiceImpl implements GeofenceDeploymentService 
                 geofenceDeployment.getHexPayload(),
                 geofenceDeployment.getDeployedBy(),
                 geofenceDeployment.getIsActive(),
-                geofenceDeployment.getExpiresAt() != null ? java.sql.Timestamp.from(geofenceDeployment.getExpiresAt())
-                        : null);
+                toTimestamp(geofenceDeployment.getExpiresAt()),
+                toTimestamp(now),
+                toTimestamp(now));
     }
 
     /**
@@ -385,9 +391,11 @@ public class GeofenceDeploymentServiceImpl implements GeofenceDeploymentService 
      */
     private GeofenceDeployment updateGeofenceDeploymentWithJsonb(Long id, String geojson, String hexPayload,
             String msgType, String deployedBy, Boolean isActive, Instant expiresAt) {
+        Instant now = Instant.now();
         String sql = """
                 UPDATE geofence_deployments
-                SET geojson = ?::jsonb, hex_payload = ?, msg_type = ?, deployed_by = ?, is_active = ?, expires_at = ?::timestamp, updated_at = CURRENT_TIMESTAMP
+                SET geojson = ?::jsonb, hex_payload = ?, msg_type = ?, deployed_by = ?, is_active = ?,
+                    expires_at = ?, updated_at = ?
                 WHERE id = ?
                 RETURNING id, geofence_id, created_at, updated_at
                 """;
@@ -402,8 +410,8 @@ public class GeofenceDeploymentServiceImpl implements GeofenceDeploymentService 
             updated.setDeployedBy(deployedBy);
             updated.setIsActive(isActive);
             updated.setExpiresAt(expiresAt);
-            updated.setCreatedAt(rs.getTimestamp("created_at").toInstant());
-            updated.setUpdatedAt(rs.getTimestamp("updated_at").toInstant());
+            updated.setCreatedAt(readInstant(rs, "created_at"));
+            updated.setUpdatedAt(readInstant(rs, "updated_at"));
             return updated;
         },
                 geojson,
@@ -411,8 +419,18 @@ public class GeofenceDeploymentServiceImpl implements GeofenceDeploymentService 
                 msgType,
                 deployedBy,
                 isActive,
-                expiresAt != null ? java.sql.Timestamp.from(expiresAt) : null,
+                toTimestamp(expiresAt),
+                toTimestamp(now),
                 id);
+    }
+
+    private static java.sql.Timestamp toTimestamp(Instant instant) {
+        return instant != null ? java.sql.Timestamp.from(instant) : null;
+    }
+
+    private static Instant readInstant(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        java.sql.Timestamp timestamp = rs.getTimestamp(column);
+        return timestamp != null ? timestamp.toInstant() : null;
     }
 
     /**
