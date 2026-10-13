@@ -24,7 +24,7 @@ import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformationMes
 import us.dot.its.jpo.asn.j2735.r2024.MapData.MapDataMessageFrame;
 import us.dot.its.jpo.asn.j2735.r2024.MapData.IntersectionGeometryList;
 
-import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.geom.Geometry;
 
 /**
  * Utility class for converting between deposit request formats and geofence deployment formats.
@@ -345,7 +345,7 @@ public class GeofenceDeploymentConverter {
             }
 
             TimCoordinateConverter.TimGeometry geometry = timCoordinateConverter.convertTimToCoordinates(dataFrames);
-            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+            return convertGeometryToGeofenceFeatureCollection(geometry.geofenceGeometry);
         } catch (ErrorResponseException e) {
             throw e;
         } catch (Exception e) {
@@ -381,7 +381,7 @@ public class GeofenceDeploymentConverter {
             }
 
             MapCoordinateConverter.MapGeometry geometry = mapCoordinateConverter.convertMapToCoordinates(intersections);
-            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+            return convertGeometryToGeofenceFeatureCollection(geometry.geofenceGeometry);
         } catch (ErrorResponseException e) {
             throw e;
         } catch (Exception e) {
@@ -394,18 +394,17 @@ public class GeofenceDeploymentConverter {
     }
 
     /**
-     * Convert JTS Polygon to GeofenceFeatureCollection
+     * Convert a supported JTS geometry to GeofenceFeatureCollection.
      * 
-     * @param polygon The JTS Polygon to convert
-     * @return GeofenceFeatureCollection containing the polygon
+     * @param geometry The JTS geometry to convert
+     * @return GeofenceFeatureCollection containing the geometry
      */
-    private GeofenceFeatureCollection convertPolygonToGeofenceFeatureCollection(Polygon polygon) {
+    private GeofenceFeatureCollection convertGeometryToGeofenceFeatureCollection(Geometry geometry) {
         GeofenceFeature feature = new GeofenceFeature();
         feature.setType("Feature");
         feature.setProperties(new HashMap<>());
 
-        // Use the helper to convert JTS Polygon to custom geometry
-        GeofenceFeatureHelper.setGeometry(feature, polygon);
+        GeofenceFeatureHelper.setGeometry(feature, geometry);
 
         GeofenceFeatureCollection geoFence = new GeofenceFeatureCollection();
         geoFence.setType("FeatureCollection");

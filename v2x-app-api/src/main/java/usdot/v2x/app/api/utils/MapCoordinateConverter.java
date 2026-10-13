@@ -40,9 +40,9 @@ public class MapCoordinateConverter {
     }
 
     public static class MapGeometry {
-        public final Polygon geofenceGeometry;
+        public final Geometry geofenceGeometry;
 
-        public MapGeometry(Polygon geofenceGeometry) {
+        public MapGeometry(Geometry geofenceGeometry) {
             this.geofenceGeometry = geofenceGeometry;
         }
     }
@@ -64,10 +64,10 @@ public class MapCoordinateConverter {
             throw new IllegalArgumentException("No valid intersections found in MAP message");
         }
 
-        // Combine all polygons into a single polygon using union operation
-        Polygon combinedPolygon = GeometryUtils.combinePolygons(polygons);
+        // Union all intersections while retaining disconnected MultiPolygon components.
+        Geometry combinedGeometry = GeometryUtils.combinePolygons(polygons);
 
-        return new MapGeometry(combinedPolygon);
+        return new MapGeometry(combinedGeometry);
     }
 
     private Polygon convertIntersectionToPolygon(IntersectionGeometry intersection) {
