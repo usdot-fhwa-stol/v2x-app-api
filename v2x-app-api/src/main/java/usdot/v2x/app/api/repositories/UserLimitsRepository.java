@@ -38,10 +38,25 @@ public interface UserLimitsRepository extends JpaRepository<UserLimits, Long> {
     List<UserLimits> findByVendorId(@Param("vendorId") String vendorId);
 
     /**
+     * Find user limits by username and vendor ID (regardless of active status).
+     * Used for create/update and startup seeding so soft-deleted rows are not inserted again.
+     */
+    @Query("SELECT u FROM UserLimits u WHERE u.username = :username AND u.vendorId = :vendorId")
+    Optional<UserLimits> findByUsernameAndVendorIdIgnoreActive(@Param("username") String username,
+            @Param("vendorId") String vendorId);
+
+    /**
      * Check if user limits exist for username and vendor
      */
     @Query("SELECT COUNT(u) > 0 FROM UserLimits u WHERE u.username = :username AND u.vendorId = :vendorId AND u.isActive = true")
     boolean existsByUsernameAndVendorId(@Param("username") String username, @Param("vendorId") String vendorId);
+
+    /**
+     * Check if a user-limits row exists for username and vendor, including soft-deleted rows.
+     */
+    @Query("SELECT COUNT(u) > 0 FROM UserLimits u WHERE u.username = :username AND u.vendorId = :vendorId")
+    boolean existsByUsernameAndVendorIdIgnoreActive(@Param("username") String username,
+            @Param("vendorId") String vendorId);
 
     /**
      * Find inactive user limits by vendor ID (for re-activation)
