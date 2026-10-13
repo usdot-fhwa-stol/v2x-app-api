@@ -45,7 +45,7 @@ class MapCoordinateConverterTest {
         assertTrue(geometry.geofenceGeometry instanceof Polygon);
 
         // Verify the geometry bounds
-        Polygon polygon = geometry.geofenceGeometry;
+        Polygon polygon = (Polygon) geometry.geofenceGeometry;
         Coordinate[] coords = polygon.getCoordinates();
         assertTrue(coords.length > 0);
 
@@ -75,7 +75,7 @@ class MapCoordinateConverterTest {
         assertTrue(geometry.geofenceGeometry instanceof Polygon);
 
         // Verify the combined polygon contains all intersection refpoints
-        Polygon combinedPolygon = geometry.geofenceGeometry;
+        Polygon combinedPolygon = (Polygon) geometry.geofenceGeometry;
         for (int i = 0; i < intersections.size(); i++) {
             Position3D refPoint = intersections.get(i).getRefPoint();
             Point point = GeometryUtils.getGeometryFactory().createPoint(new Coordinate(

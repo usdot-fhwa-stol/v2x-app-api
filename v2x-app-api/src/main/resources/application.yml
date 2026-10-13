@@ -41,6 +41,8 @@ keycloak:
   endpoint: ${KEYCLOAK_ENDPOINT:http://localhost:8084}
 geometry:
   geofence-offset-meters: ${GEOFENCE_OFFSET_METERS:50.0}
+  geofence-path-length-offset-meters: ${GEOFENCE_PATH_LENGTH_OFFSET_METERS:0.0}
+  geofence-path-extension-tip-width-meters: ${GEOFENCE_PATH_EXTENSION_TIP_WIDTH_METERS:0.0}
   default-lane-width-cm: ${DEFAULT_LANE_WIDTH_CM:1500.0}
 j2735.codec:
   text-buffer-size: 262144
