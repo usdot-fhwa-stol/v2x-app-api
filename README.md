@@ -96,6 +96,7 @@ The repository consists of four main services:
    - `ETX_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per user (default: `5`)
    - `ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT`: Max registrations for depositor vendor (default: `10`)
    - `ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per depositor user (default: `3`)
+   - `ACL_RULES_TIM_SUBSCRIBE_FILTER_ENABLED`: Narrow the ACL subscribe topics returned to devices to TIM GeoRelevance messages (default: `false`). Rules without existing subscribe permissions are left unchanged.
 
    **Geofence Configuration:**
    - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `100.0`)

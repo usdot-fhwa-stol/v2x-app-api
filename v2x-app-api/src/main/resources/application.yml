@@ -21,6 +21,8 @@ etx:
     cleanup:
       enabled: ${GEOFENCE_CLEANUP_ENABLED:false}
       interval: ${GEOFENCE_CLEANUP_INTERVAL:5m}
+  acl-rules:
+    tim-subscribe-filter-enabled: ${ACL_RULES_TIM_SUBSCRIBE_FILTER_ENABLED:false}
 thingspace:
   enabled: ${THINGSPACE_ENABLED:true}
   endpoint: ${THINGSPACE_ENDPOINT:https://thingspace.verizon.com}
