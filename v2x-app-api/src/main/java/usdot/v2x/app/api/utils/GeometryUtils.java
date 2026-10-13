@@ -11,7 +11,6 @@ import org.geotools.api.referencing.operation.MathTransform;
 import org.geotools.referencing.GeodeticCalculator;
 import org.springframework.stereotype.Component;
 import java.awt.geom.Point2D;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -22,7 +21,7 @@ import java.util.List;
  * - Calculating geographic points and distances
  * - Creating and manipulating geometric buffers
  * - Handling J2735 coordinate conversions
- * - Combining multiple polygons into a single polygon
+ * - Combining multiple polygons while preserving disconnected components
  */
 @Component
 public class GeometryUtils {
@@ -61,15 +60,52 @@ public class GeometryUtils {
     }
 
     /**
-     * Combines multiple polygons into a single polygon using union operations.
+     * Calculates the initial bearing from a start point to a destination point.
+     * Uses the GeodeticCalculator for accurate ellipsoidal calculations on WGS84.
+     * Thread-safe implementation using synchronization.
+     *
+     * @param startLon Starting longitude in decimal degrees
+     * @param startLat Starting latitude in decimal degrees
+     * @param endLon   Destination longitude in decimal degrees
+     * @param endLat   Destination latitude in decimal degrees
+     * @return Bearing angle in degrees (0 = north, 90 = east, 180 = south,
+     *         270 = west)
+     */
+    public static double calculateBearing(double startLon, double startLat, double endLon, double endLat) {
+        synchronized (calculator) {
+            calculator.setStartingGeographicPoint(startLon, startLat);
+            calculator.setDestinationGeographicPoint(endLon, endLat);
+            return calculator.getAzimuth();
+        }
+    }
+
+    /**
+     * Calculates the ellipsoidal distance between two geographic points in meters.
+     *
+     * @param startLon Starting longitude in decimal degrees
+     * @param startLat Starting latitude in decimal degrees
+     * @param endLon   Destination longitude in decimal degrees
+     * @param endLat   Destination latitude in decimal degrees
+     * @return Distance in meters
+     */
+    public static double calculateDistanceMeters(double startLon, double startLat, double endLon, double endLat) {
+        synchronized (calculator) {
+            calculator.setStartingGeographicPoint(startLon, startLat);
+            calculator.setDestinationGeographicPoint(endLon, endLat);
+            return calculator.getOrthodromicDistance();
+        }
+    }
+
+    /**
+     * Combines multiple polygons into their exact union geometry.
      * This method handles overlapping and non-overlapping polygons efficiently.
      * 
      * @param polygons List of polygons to combine
-     * @return A single polygon that encompasses all input polygons
+     * @return the union as a Polygon or MultiPolygon, preserving disconnected areas
      * @throws RuntimeException if the union operation fails or produces unexpected
      *                          geometry types
      */
-    public static Polygon combinePolygons(List<Polygon> polygons) {
+    public static Geometry combinePolygons(List<Polygon> polygons) {
         if (polygons.isEmpty()) {
             // Return a default empty polygon if no polygons exist
             return geometryFactory.createPolygon();
@@ -85,29 +121,11 @@ public class GeometryUtils {
             // This handles overlapping and non-overlapping polygons efficiently
             Geometry combinedGeometry = UnaryUnionOp.union(polygons);
 
-            // If the result is a polygon, return it directly
-            if (combinedGeometry instanceof Polygon) {
-                return (Polygon) combinedGeometry;
-            }
-
-            // If the result is a MultiPolygon, we need to extract the first polygon
-            // or create a union of all polygons in the MultiPolygon
-            if (combinedGeometry instanceof MultiPolygon) {
-                MultiPolygon multiPolygon = (MultiPolygon) combinedGeometry;
-                if (multiPolygon.getNumGeometries() == 1) {
-                    return (Polygon) multiPolygon.getGeometryN(0);
-                } else {
-                    // If we have multiple polygons after union, try to union them again
-                    // This can happen with complex geometries
-                    List<Polygon> remainingPolygons = new ArrayList<>();
-                    for (int i = 0; i < multiPolygon.getNumGeometries(); i++) {
-                        Geometry geom = multiPolygon.getGeometryN(i);
-                        if (geom instanceof Polygon) {
-                            remainingPolygons.add((Polygon) geom);
-                        }
-                    }
-                    return combinePolygons(remainingPolygons);
-                }
+            // Disconnected inputs legitimately produce a MultiPolygon. Re-unioning the
+            // same disconnected components cannot turn them into a Polygon and caused
+            // unbounded recursion, so preserve the exact union result.
+            if (combinedGeometry instanceof Polygon || combinedGeometry instanceof MultiPolygon) {
+                return combinedGeometry;
             }
 
             // If we get here, the result is not a polygon or MultiPolygon
@@ -198,6 +216,69 @@ public class GeometryUtils {
         params.setQuadrantSegments(quadrantSegments);
         params.setEndCapStyle(endCapStyle);
         return params;
+    }
+
+    /**
+     * Builds a triangular or trapezoidal extension wedge in UTM so it aligns with
+     * {@link #bufferGeometryWithUtm(Geometry, double, BufferParameters)} output.
+     * Input coordinates use the same (lat, lon) axis order as the buffer helper.
+     */
+    public static Polygon buildTriangularExtensionWedgeWithUtm(Coordinate endpointLatLon,
+            Coordinate pathNeighborLatLon, double corridorHalfWidthMeters, double lengthOffsetMeters,
+            double tipWidthMeters) throws Exception {
+        LineString reference = geometryFactory.createLineString(new Coordinate[] { endpointLatLon, pathNeighborLatLon });
+        Point center = reference.getCentroid();
+        int utmZone = (int) ((center.getY() + 180) / 6) + 1;
+        String epsgCode = String.format("EPSG:%d", center.getX() > 0 ? 32600 + utmZone : 32700 + utmZone);
+
+        CoordinateReferenceSystem utm = CRS.decode(epsgCode);
+        CoordinateReferenceSystem wgs84 = CRS.decode("EPSG:4326");
+        MathTransform toMeters = CRS.findMathTransform(wgs84, utm);
+        MathTransform toDegrees = CRS.findMathTransform(utm, wgs84);
+
+        Coordinate endpointUtm = JTS.transform(geometryFactory.createPoint(endpointLatLon), toMeters).getCoordinate();
+        Coordinate neighborUtm = JTS.transform(geometryFactory.createPoint(pathNeighborLatLon), toMeters)
+                .getCoordinate();
+
+        double dx = endpointUtm.x - neighborUtm.x;
+        double dy = endpointUtm.y - neighborUtm.y;
+        double segmentLength = Math.hypot(dx, dy);
+        if (segmentLength == 0) {
+            throw new IllegalArgumentException("Cannot build extension wedge for zero-length segment");
+        }
+
+        double dirX = dx / segmentLength;
+        double dirY = dy / segmentLength;
+        double perpX = -dirY;
+        double perpY = dirX;
+        double tipHalfWidth = tipWidthMeters / 2.0;
+
+        Coordinate baseLeft = offsetByPerpendicular(endpointUtm, perpX, perpY, -corridorHalfWidthMeters);
+        Coordinate baseRight = offsetByPerpendicular(endpointUtm, perpX, perpY, corridorHalfWidthMeters);
+        Coordinate tipCenter = new Coordinate(
+                endpointUtm.x + dirX * lengthOffsetMeters,
+                endpointUtm.y + dirY * lengthOffsetMeters);
+
+        Coordinate[] ringUtm;
+        if (tipHalfWidth <= 0) {
+            ringUtm = new Coordinate[] { baseLeft, baseRight, tipCenter, baseLeft };
+        } else {
+            Coordinate tipLeft = offsetByPerpendicular(tipCenter, perpX, perpY, -tipHalfWidth);
+            Coordinate tipRight = offsetByPerpendicular(tipCenter, perpX, perpY, tipHalfWidth);
+            ringUtm = new Coordinate[] { baseLeft, baseRight, tipRight, tipLeft, baseLeft };
+        }
+
+        Polygon wedgeUtm = geometryFactory.createPolygon(geometryFactory.createLinearRing(ringUtm));
+        Polygon wedge = (Polygon) JTS.transform(wedgeUtm, toDegrees);
+        swapCoordinates(wedge);
+        return wedge;
+    }
+
+    private static Coordinate offsetByPerpendicular(Coordinate origin, double perpX, double perpY,
+            double distanceMeters) {
+        return new Coordinate(
+                origin.x + perpX * distanceMeters,
+                origin.y + perpY * distanceMeters);
     }
 
     /**

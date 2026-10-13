@@ -33,6 +33,28 @@ class GeometryUtilsTest {
     }
 
     @Test
+    void testCalculateBearing() {
+        double startLon = -77.0369;
+        double startLat = 38.9072;
+
+        Point2D north = GeometryUtils.calculateDestinationPoint(startLon, startLat, 0, 1000);
+        assertEquals(0.0, GeometryUtils.calculateBearing(startLon, startLat, north.getX(), north.getY()), 1.0);
+
+        Point2D east = GeometryUtils.calculateDestinationPoint(startLon, startLat, 90, 1000);
+        assertEquals(90.0, GeometryUtils.calculateBearing(startLon, startLat, east.getX(), east.getY()), 1.0);
+    }
+
+    @Test
+    void testCalculateDistanceMeters() {
+        double startLon = -77.0369;
+        double startLat = 38.9072;
+        Point2D north = GeometryUtils.calculateDestinationPoint(startLon, startLat, 0, 1000);
+
+        assertEquals(1000.0,
+                GeometryUtils.calculateDistanceMeters(startLon, startLat, north.getX(), north.getY()), 2.0);
+    }
+
+    @Test
     void testBufferGeometryWithUtm() throws Exception {
         // Create a point geometry in WGS84
         GeometryFactory factory = GeometryUtils.getGeometryFactory();

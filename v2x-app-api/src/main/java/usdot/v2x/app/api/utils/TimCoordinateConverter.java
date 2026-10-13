@@ -14,12 +14,18 @@ import org.locationtech.jts.operation.buffer.BufferParameters;
 import java.awt.geom.Point2D;
 import org.springframework.stereotype.Component;
 
+import lombok.extern.slf4j.Slf4j;
 import usdot.v2x.app.api.config.GeometryProperties;
 
+@Slf4j
 @Component
 public class TimCoordinateConverter {
     private static final GeometryFactory geometryFactory = GeometryUtils.getGeometryFactory();
     private final GeometryProperties geometryProperties;
+
+    enum PathLengthExtension {
+        NONE, START, END, BOTH
+    }
 
     static class GeoPoint {
         final double lat;
@@ -37,9 +43,9 @@ public class TimCoordinateConverter {
 
     public static class TimGeometry {
         public final LineString pathGeometry;
-        public final Polygon geofenceGeometry;
+        public final Geometry geofenceGeometry;
 
-        public TimGeometry(LineString pathGeometry, Polygon geofenceGeometry) {
+        public TimGeometry(LineString pathGeometry, Geometry geofenceGeometry) {
             this.pathGeometry = pathGeometry;
             this.geofenceGeometry = geofenceGeometry;
         }
@@ -48,6 +54,7 @@ public class TimCoordinateConverter {
     public TimGeometry convertTimToCoordinates(List<TravelerDataFrame> dataFrames) {
         List<Coordinate> allPathCoordinates = new ArrayList<>();
         List<Polygon> allPolygons = new ArrayList<>();
+        List<RegionWork> regionWork = new ArrayList<>();
 
         for (TravelerDataFrame dataFrame : dataFrames) {
             List<GeographicalPath> regions = dataFrame.getRegions();
@@ -55,48 +62,84 @@ public class TimCoordinateConverter {
                 for (GeographicalPath region : regions) {
                     List<List<Double>> regionPath = processRegion(region);
 
-                    // Convert region coordinates to JTS Coordinates
                     List<Coordinate> regionCoords = regionPath.stream()
                             .map(point -> new Coordinate(point.get(0), point.get(1)))
                             .collect(Collectors.toList());
                     allPathCoordinates.addAll(regionCoords);
 
-                    Polygon regionPolygon = null;
-
-                    // Check if closedPath is set to true in the region
                     boolean isClosedPath = region.getClosedPath() != null && region.getClosedPath().getValue();
-
-                    // Check if this is a closed region (circle) or has a geometry
                     boolean isClosedRegion = region.getDescription() != null &&
                             region.getDescription().getGeometry() != null &&
                             region.getDescription().getGeometry().getCircle() != null;
-
-                    if (isClosedPath) {
-                        // If closedPath is true, treat the offset path as a polygon and apply offset
-                        regionPolygon = createGeofencePolygonFromClosedPath(regionPath);
-                    } else if (isClosedRegion) {
-                        regionPolygon = createGeofencePolygonClosedPath(regionPath);
-                    } else {
-                        double laneWidth = region.getLaneWidth() != null ? region.getLaneWidth().getValue()
-                                : geometryProperties.getDefaultLaneWidthCm();
-                        regionPolygon = createGeofencePolygonOpenPath(regionPath, laneWidth);
-                    }
-
-                    if (regionPolygon != null) {
-                        allPolygons.add(regionPolygon);
-                    }
+                    boolean isOpenPath = !isClosedPath && !isClosedRegion;
+                    regionWork.add(new RegionWork(region, regionPath, isClosedPath, isClosedRegion, isOpenPath));
                 }
             }
         }
 
-        // Create LineString from all path coordinates
+        int firstOpenIndex = -1;
+        int lastOpenIndex = -1;
+        for (int i = 0; i < regionWork.size(); i++) {
+            if (regionWork.get(i).isOpenPath) {
+                if (firstOpenIndex < 0) {
+                    firstOpenIndex = i;
+                }
+                lastOpenIndex = i;
+            }
+        }
+
+        for (int i = 0; i < regionWork.size(); i++) {
+            RegionWork work = regionWork.get(i);
+            Polygon regionPolygon = null;
+            Geometry regionGeometry = null;
+
+            if (work.isClosedPath) {
+                regionPolygon = createGeofencePolygonFromClosedPath(work.path);
+            } else if (work.isClosedRegion) {
+                regionPolygon = createGeofencePolygonClosedPath(work.path);
+            } else {
+                double laneWidth = work.region.getLaneWidth() != null ? work.region.getLaneWidth().getValue()
+                        : geometryProperties.getDefaultLaneWidthCm();
+                PathLengthExtension extension = pathLengthExtensionFor(i, firstOpenIndex, lastOpenIndex);
+                if (extension != PathLengthExtension.NONE
+                        && geometryProperties.getGeofencePathLengthOffsetMeters() > 0) {
+                    log.debug("Applying triangular path extension of {} m (tip width {} m) to {} open-path region {}",
+                            geometryProperties.getGeofencePathLengthOffsetMeters(),
+                            geometryProperties.getGeofencePathExtensionTipWidthMeters(), extension, i);
+                }
+                regionGeometry = createGeofencePolygonOpenPath(work.path, laneWidth, extension);
+            }
+
+            if (regionPolygon != null) {
+                allPolygons.add(regionPolygon);
+            } else if (regionGeometry != null) {
+                addPolygons(allPolygons, regionGeometry);
+            }
+        }
+
         LineString pathGeometry = geometryFactory.createLineString(
                 allPathCoordinates.toArray(new Coordinate[0]));
 
-        // Combine all polygons into a single polygon using union operation
-        Polygon combinedPolygon = GeometryUtils.combinePolygons(allPolygons);
+        Geometry combinedGeometry = GeometryUtils.combinePolygons(allPolygons);
 
-        return new TimGeometry(pathGeometry, combinedPolygon);
+        return new TimGeometry(pathGeometry, combinedGeometry);
+    }
+
+    static PathLengthExtension pathLengthExtensionFor(int index, int firstOpenIndex, int lastOpenIndex) {
+        if (index < 0 || index != firstOpenIndex && index != lastOpenIndex) {
+            return PathLengthExtension.NONE;
+        }
+        if (index == firstOpenIndex && index == lastOpenIndex) {
+            return PathLengthExtension.BOTH;
+        }
+        if (index == firstOpenIndex) {
+            return PathLengthExtension.START;
+        }
+        return PathLengthExtension.END;
+    }
+
+    private record RegionWork(GeographicalPath region, List<List<Double>> path, boolean isClosedPath,
+            boolean isClosedRegion, boolean isOpenPath) {
     }
 
     private List<List<Double>> processRegion(GeographicalPath region) {
@@ -298,7 +341,20 @@ public class TimCoordinateConverter {
         return coordinates;
     }
 
-    private Polygon createGeofencePolygonOpenPath(List<List<Double>> coordinates, double laneWidthCm) {
+    private static void addPolygons(List<Polygon> allPolygons, Geometry geometry) {
+        if (geometry instanceof Polygon polygon) {
+            allPolygons.add(polygon);
+            return;
+        }
+        if (geometry instanceof MultiPolygon multiPolygon) {
+            for (int i = 0; i < multiPolygon.getNumGeometries(); i++) {
+                allPolygons.add((Polygon) multiPolygon.getGeometryN(i));
+            }
+        }
+    }
+
+    private Geometry createGeofencePolygonOpenPath(List<List<Double>> coordinates, double laneWidthCm,
+            PathLengthExtension extension) {
         try {
             if (coordinates == null || coordinates.isEmpty()) {
                 return null;
@@ -314,18 +370,120 @@ public class TimCoordinateConverter {
                 return createPointBufferGeometry(coords[0], geometryProperties.getGeofenceOffsetMeters());
             }
 
-            // Create LineString from coordinates
+            double lengthOffsetMeters = geometryProperties.getGeofencePathLengthOffsetMeters();
+            double tipWidthMeters = geometryProperties.getGeofencePathExtensionTipWidthMeters();
+            double corridorHalfWidth = (laneWidthCm / 100.0) + geometryProperties.getGeofenceOffsetMeters();
+            boolean hasTriangularExtension = extension != PathLengthExtension.NONE && lengthOffsetMeters > 0;
+
+            int capStyle = hasTriangularExtension ? BufferParameters.CAP_FLAT : BufferParameters.CAP_SQUARE;
+            BufferParameters bufferParams = GeometryUtils.createBufferParameters(1, capStyle);
+
             LineString lineString = geometryFactory.createLineString(coords);
+            Geometry corridor = GeometryUtils.bufferGeometryWithUtm(lineString, corridorHalfWidth, bufferParams);
 
-            // Set buffer parameters for open paths
-            BufferParameters bufferParams = GeometryUtils.createBufferParameters(1, BufferParameters.CAP_SQUARE);
+            if (!hasTriangularExtension) {
+                return corridor;
+            }
 
-            // Apply buffer using lane width plus geofence offset
-            double totalBufferDistance = (laneWidthCm / 100.0) + geometryProperties.getGeofenceOffsetMeters();
-            return (Polygon) GeometryUtils.bufferGeometryWithUtm(lineString, totalBufferDistance, bufferParams);
+            List<Polygon> parts = new ArrayList<>();
+            addPolygons(parts, corridor);
+
+            if (extension == PathLengthExtension.START || extension == PathLengthExtension.BOTH) {
+                Coordinate start = coords[0];
+                Coordinate startNext = findNextDistinctCoordinate(coords, 0, 1);
+                if (startNext != null) {
+                    parts.add(GeometryUtils.buildTriangularExtensionWedgeWithUtm(start, startNext, corridorHalfWidth,
+                            lengthOffsetMeters, tipWidthMeters));
+                }
+            }
+
+            if (extension == PathLengthExtension.END || extension == PathLengthExtension.BOTH) {
+                Coordinate end = coords[coords.length - 1];
+                Coordinate endPrev = findNextDistinctCoordinate(coords, coords.length - 1, -1);
+                if (endPrev != null) {
+                    parts.add(GeometryUtils.buildTriangularExtensionWedgeWithUtm(end, endPrev, corridorHalfWidth,
+                            lengthOffsetMeters, tipWidthMeters));
+                }
+            }
+
+            Geometry combined = GeometryUtils.combinePolygons(parts);
+            return combined;
         } catch (Exception e) {
             throw new RuntimeException("Error creating geofence polygon", e);
         }
+    }
+
+    /**
+     * Builds a wedge polygon extending from a path endpoint. Coordinates are in
+     * (lat, lon) order to match the UTM buffer input convention.
+     */
+    static Polygon buildTriangularExtensionWedge(Coordinate endpoint, Coordinate pathNeighbor,
+            double corridorHalfWidth, double lengthOffsetMeters, double tipWidthMeters) {
+        try {
+            return GeometryUtils.buildTriangularExtensionWedgeWithUtm(endpoint, pathNeighbor, corridorHalfWidth,
+                    lengthOffsetMeters, tipWidthMeters);
+        } catch (Exception e) {
+            throw new RuntimeException("Error building triangular extension wedge", e);
+        }
+    }
+
+    /**
+     * Extends the outer end(s) of an open path. Coordinates are in (lat, lon)
+     * order to match the UTM buffer input convention. Middle regions should pass
+     * {@link PathLengthExtension#NONE}.
+     */
+    static Coordinate[] extendOpenPathLength(Coordinate[] coords, double lengthOffsetMeters) {
+        return extendOpenPathLength(coords, lengthOffsetMeters, PathLengthExtension.BOTH);
+    }
+
+    static Coordinate[] extendOpenPathLength(Coordinate[] coords, double lengthOffsetMeters,
+            PathLengthExtension extension) {
+        if (lengthOffsetMeters <= 0 || coords.length < 2 || extension == PathLengthExtension.NONE) {
+            return coords;
+        }
+
+        List<Coordinate> extended = new ArrayList<>();
+
+        if (extension == PathLengthExtension.START || extension == PathLengthExtension.BOTH) {
+            Coordinate start = coords[0];
+            Coordinate startNext = findNextDistinctCoordinate(coords, 0, 1);
+            if (startNext != null) {
+                double reverseBearing = GeometryUtils.calculateBearing(startNext.y, startNext.x, start.y, start.x);
+                List<Coordinate> prefix = buildExtension(start, reverseBearing, lengthOffsetMeters);
+                for (int i = prefix.size() - 1; i >= 0; i--) {
+                    extended.add(prefix.get(i));
+                }
+            }
+        }
+
+        extended.addAll(Arrays.asList(coords));
+
+        if (extension == PathLengthExtension.END || extension == PathLengthExtension.BOTH) {
+            Coordinate end = coords[coords.length - 1];
+            Coordinate endPrev = findNextDistinctCoordinate(coords, coords.length - 1, -1);
+            if (endPrev != null) {
+                double endBearing = GeometryUtils.calculateBearing(endPrev.y, endPrev.x, end.y, end.x);
+                extended.addAll(buildExtension(end, endBearing, lengthOffsetMeters));
+            }
+        }
+
+        return extended.toArray(new Coordinate[0]);
+    }
+
+    private static List<Coordinate> buildExtension(Coordinate origin, double bearingDegrees, double distanceMeters) {
+        Point2D destination = GeometryUtils.calculateDestinationPoint(origin.y, origin.x, bearingDegrees,
+                distanceMeters);
+        return List.of(new Coordinate(destination.getY(), destination.getX()));
+    }
+
+    private static Coordinate findNextDistinctCoordinate(Coordinate[] coords, int fromIndex, int step) {
+        Coordinate origin = coords[fromIndex];
+        for (int i = fromIndex + step; i >= 0 && i < coords.length; i += step) {
+            if (!coords[i].equals2D(origin)) {
+                return coords[i];
+            }
+        }
+        return null;
     }
 
     private Polygon createGeofencePolygonClosedPath(List<List<Double>> coordinates) {

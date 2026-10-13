@@ -96,12 +96,21 @@ The repository consists of four main services:
    - `ETX_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per user (default: `5`)
    - `ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT`: Max registrations for depositor vendor (default: `10`)
    - `ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per depositor user (default: `3`)
+   - `ACL_RULES_TIM_SUBSCRIBE_FILTER_ENABLED`: Restrict returned ACL subscribe topics to TIM GeoRelevance messages (default: `false`). This filter is opt-in because it replaces the upstream subscribe-topic list.
 
    **Geofence Configuration:**
-   - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `100.0`)
+   - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `50.0`). For path-based TIMs this is applied as a lateral (width) buffer in addition to lane width; it also extends the ends of the path by the same buffer distance.
+   - `GEOFENCE_PATH_LENGTH_OFFSET_METERS`: Extra meters to extend the first and last open (path-based) TIM regions along the path (default: `0.0`). Middle regions are not length-extended, so adjacent TIM segments do not overlap. Extensions are triangular wedges rather than full-width rectangles. Closed-path and circle TIMs are unaffected.
+   - `GEOFENCE_PATH_EXTENSION_TIP_WIDTH_METERS`: Lateral width in meters at the outer tip of those triangular extensions (default: `0.0`, pointed triangle). Set close to `2 × (lane width + GEOFENCE_OFFSET_METERS)` to approximate legacy rectangular extensions.
    - `DEFAULT_LANE_WIDTH_CM`: Default lane width in centimeters (default: `1500.0`)
    - `GEOFENCE_GEOHASH_PRECISION`: Geohash precision for geofence generation (default: `7`). This determines the spatial resolution of geohash-based geofences. See [Geohash precision documentation](https://en.wikipedia.org/wiki/Geohash#Digits_and_precision_in_km) for details on how precision affects geographic area coverage.
-   - `GEOFENCE_LIMITS_MAX_GEOHASHES`: Maximum number of geohashes allowed per geofence deployment (default: `500`)
+   - `GEOFENCE_GEOHASH_POLYGON_ANALYSIS_PARALLELISM`: Maximum shared CPU workers for scanning disconnected polygon components (default: `4`, capped at the processors visible to the JVM). Set to `1` for sequential analysis. Candidate budgets are always reserved before workers start.
+   - `GEOFENCE_LIMITS_MAX_GEOHASHES`: Maximum number of geohashes allowed per geofence deployment (default: `500`). Exceeding this limit returns `413 GEOFENCE_TOO_LARGE`.
+   - `GEOFENCE_LIMITS_MAX_CANDIDATE_CELLS`: Maximum number of precision-level cells the API will inspect while covering one deployment region (default: `100000`). Regions whose geohash-aligned bounding envelopes exceed this work budget are rejected with `413 GEOFENCE_TOO_LARGE` before cell enumeration.
+   - `GEOFENCE_LIMITS_MIN_GEOHASHES`: Minimum geohashes for small polygons (default: `4`)
+   - `GEOFENCE_LIMITS_REPRESENTATIVE_FILTER_THRESHOLD`: Intersecting-cell count at which 3×3 representative thinning begins (default: `20`). Deployments with this many geohashes or fewer keep every intersecting cell. Larger deployments are thinned to one representative per 3×3 block. Set to `0` to always thin.
+   - `GEOFENCE_LIMITS_OVERRIDE_GEOHASH_THRESHOLD`: Maximum 3×3-representative geohashes an override geofence may cover (default: `50`). If the override exceeds this count, the partner API generates a geofence from the TIM/MAP message and deploys over that region instead. Applies to both `ETX_CONFIGURATION_API` and `GEOFENCE_MQTT` deposit modes. Set to `0` to always generate from the message. When MQTT keeps the override, it persists every intersecting geohash cell rather than thinning to those 3×3 representatives.
+   - `GEOFENCE_LIMITS_ALLOW_OVERLAPPING_GEOHASHES`: When true, multiple TIMs/MAPs may share geohashes (default: `true`)
    - `GEOFENCE_CLEANUP_ENABLED`: Enable periodic cleanup of inactive TIM geofences (default: `false`)
    - `GEOFENCE_CLEANUP_INTERVAL`: Cleanup interval duration (default: `5m`). Supports duration formats like `5m`, `30s`, `1h`, or ISO-8601 format like `PT5M`.
    - `GEOFENCE_EXPIRATION_CLEANUP_ENABLED`: Enable cleanup of expired geofences (default: `true`)
@@ -269,6 +278,7 @@ docker compose -f docker-compose.yml -f docker-compose-lets-encrypt.yml logs -f 
 
 ### Deposit
 - `POST /prd/v2/deposit/geofence` - Deposit V2X message with geofence
+- `POST /prd/v2/deposit/geofence/preview?check_conflicts=false` - Preview selected geohashes without creating a deployment. Set `check_conflicts=true` to exclude geohashes already claimed by active deployments. Requires `ROLE_ADMIN` or `ROLE_DEPOSITOR`.
 - `DELETE /prd/v2/deposit/geofence?identifier={id}` - Delete geofence deployment
 
 ### Path Management

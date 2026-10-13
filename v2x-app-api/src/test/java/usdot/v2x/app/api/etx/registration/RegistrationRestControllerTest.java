@@ -1,5 +1,6 @@
 package usdot.v2x.app.api.etx.registration;
 
+import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.registration.*;
 import usdot.v2x.app.api.services.RegistrationLogService;
 import usdot.v2x.app.api.utils.SecurityContextUtils;
@@ -35,6 +36,9 @@ class RegistrationRestControllerTest {
     private SecurityContextUtils securityContextUtils;
 
     @Mock
+    private EtxProperties etxProperties;
+
+    @Mock
     private Authentication authentication;
 
     @Mock
@@ -58,9 +62,17 @@ class RegistrationRestControllerTest {
             var securityContextUtilsField = RegistrationRestController.class.getDeclaredField("securityContextUtils");
             securityContextUtilsField.setAccessible(true);
             securityContextUtilsField.set(controller, securityContextUtils);
+
+            var etxPropertiesField = RegistrationRestController.class.getDeclaredField("etxProperties");
+            etxPropertiesField.setAccessible(true);
+            etxPropertiesField.set(controller, etxProperties);
         } catch (Exception e) {
             throw new RuntimeException("Failed to inject services", e);
         }
+
+        EtxProperties.AclRules aclRules = new EtxProperties.AclRules();
+        aclRules.setTimSubscribeFilterEnabled(true);
+        lenient().when(etxProperties.getAclRules()).thenReturn(aclRules);
 
         // Setup SecurityContextUtils mock
         lenient().when(securityContextUtils.determineVendorId()).thenReturn("test-vendor-id");
@@ -217,18 +229,46 @@ class RegistrationRestControllerTest {
     }
 
     @Test
+    void testGetAcls_FilterDisabled_ReturnsUnfiltered() {
+        EtxProperties.AclRules aclRules = new EtxProperties.AclRules();
+        aclRules.setTimSubscribeFilterEnabled(false);
+        when(etxProperties.getAclRules()).thenReturn(aclRules);
+
+        List<String> subscribeTopics = List.of(
+                "vzimp/1/Private/*/*/*/j2735_gr|JSON/*/*",
+                "vzimp/1/GeoRelevance/*/*/Public|VzTrafficDensity|VzMapManager|MergentPlatform|MergentDevice/j2735_gr|j2735|JSON/SPAT|MAP|EVA|RSA|TIM|SDSM/*");
+        Map<String, Object> rule = new LinkedHashMap<>();
+        rule.put("subscribe", subscribeTopics);
+        List<Map<String, Object>> aclRulesResponse = List.of(rule);
+        when(registrationApi.getDeviceRoles())
+                .thenReturn(reactor.core.publisher.Mono.just(aclRulesResponse));
+
+        StepVerifier.create(controller.getAcls())
+                .assertNext(response -> assertEquals(
+                        subscribeTopics,
+                        ((Map<String, Object>) ((List<?>) response).get(0)).get("subscribe")))
+                .verifyComplete();
+    }
+
+    @Test
     void testGetAcls_Success() {
         // Arrange
-        Object expectedResponse = new Object();
+        Map<String, Object> rule = new LinkedHashMap<>();
+        rule.put("subscribe", List.of(
+                "vzimp/1/Private/*/*/*/j2735_gr|JSON/*/*",
+                "vzimp/1/GeoRelevance/*/*/Public|VzTrafficDensity|VzMapManager|MergentPlatform|MergentDevice/j2735_gr|j2735|JSON/SPAT|MAP|EVA|RSA|TIM|SDSM/*"));
+        List<Map<String, Object>> aclRules = List.of(rule);
         when(registrationApi.getDeviceRoles())
-                .thenReturn(reactor.core.publisher.Mono.just(expectedResponse));
+                .thenReturn(reactor.core.publisher.Mono.just(aclRules));
 
         // Act
         reactor.core.publisher.Mono<Object> result = controller.getAcls();
 
         // Assert
         StepVerifier.create(result)
-                .expectNext(expectedResponse)
+                .assertNext(response -> assertEquals(
+                        List.of(AclRulesFilter.TIM_SUBSCRIBE_TOPIC),
+                        ((Map<String, Object>) ((List<?>) response).get(0)).get("subscribe")))
                 .verifyComplete();
         verify(registrationApi).getDeviceRoles();
     }

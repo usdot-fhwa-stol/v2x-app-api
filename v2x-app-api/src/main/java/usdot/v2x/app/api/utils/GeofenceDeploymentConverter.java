@@ -7,12 +7,12 @@ import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
+import usdot.v2x.app.api.models.geofence.GeohashPreviewResponse;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,16 +25,18 @@ import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformationMes
 import us.dot.its.jpo.asn.j2735.r2024.MapData.MapDataMessageFrame;
 import us.dot.its.jpo.asn.j2735.r2024.MapData.IntersectionGeometryList;
 
-import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.geom.Geometry;
 
 /**
  * Utility class for converting between deposit request formats and geofence deployment formats.
  */
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 
+import usdot.v2x.app.api.config.GeofenceProperties;
 import usdot.v2x.app.api.services.MessageTypeService;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
 import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
@@ -43,6 +45,8 @@ import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
 @Slf4j
 public class GeofenceDeploymentConverter {
 
+    private static final Duration DEFAULT_GRACE_PERIOD = Duration.ofHours(2);
+
     private final XmlMapper xmlMapper;
     private final GeohashUtils geohashUtils;
     private final MessageFrameCodec codec;
@@ -50,9 +54,8 @@ public class GeofenceDeploymentConverter {
     private final MessageTypeService messageTypeService;
     private final TimCoordinateConverter timCoordinateConverter;
     private final MapCoordinateConverter mapCoordinateConverter;
-
-    @Value("${tim.expiration.grace-period-hours:2}")
-    private int gracePeriodHours;
+    private final GeofenceProperties geofenceProperties;
+    private final OverrideGeofenceResolver overrideGeofenceResolver;
 
     public GeofenceDeploymentConverter(@Qualifier("xmlMapper") XmlMapper xmlMapper,
             GeohashUtils geohashUtils,
@@ -60,7 +63,9 @@ public class GeofenceDeploymentConverter {
             @Autowired(required = false) TimExpirationCalculator timExpirationCalculator,
             MessageTypeService messageTypeService,
             @Autowired(required = false) TimCoordinateConverter timCoordinateConverter,
-            @Autowired(required = false) MapCoordinateConverter mapCoordinateConverter) {
+            @Autowired(required = false) MapCoordinateConverter mapCoordinateConverter,
+            GeofenceProperties geofenceProperties,
+            OverrideGeofenceResolver overrideGeofenceResolver) {
         this.xmlMapper = xmlMapper;
         this.geohashUtils = geohashUtils;
         this.codec = codec;
@@ -68,6 +73,8 @@ public class GeofenceDeploymentConverter {
         this.messageTypeService = messageTypeService;
         this.timCoordinateConverter = timCoordinateConverter;
         this.mapCoordinateConverter = mapCoordinateConverter;
+        this.geofenceProperties = geofenceProperties;
+        this.overrideGeofenceResolver = overrideGeofenceResolver;
     }
 
     /**
@@ -120,13 +127,22 @@ public class GeofenceDeploymentConverter {
         try {
             Instant expirationTime = null;
             if (timExpirationCalculator != null) {
+                Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
+                if (gracePeriod == null) {
+                    gracePeriod = DEFAULT_GRACE_PERIOD;
+                }
+                log.info("Calculating Geofence {} expiration with grace period {}", geofenceId, gracePeriod);
                 expirationTime = timExpirationCalculator.calculateExpirationTime(
-                        configRequest.getAsn1Hex(), gracePeriodHours);
+                        configRequest.getAsn1Hex(), gracePeriod);
             }
 
             if (expirationTime != null) {
                 geofenceRequest.setExpiresAt(expirationTime.toString());
-                log.debug("Calculated expiration time for Geofence {}: {}", geofenceId, expirationTime);
+                log.info("Calculated expiration time for Geofence {}: {}", geofenceId, expirationTime);
+            } else if (timExpirationCalculator != null
+                    && timExpirationCalculator.isNeverExpiring(configRequest.getAsn1Hex())) {
+                log.debug("TIM durationTime is {} minutes for Geofence {}, deployment will not expire",
+                        TimExpirationUtils.NEVER_EXPIRE_DURATION_MINUTES, geofenceId);
             } else {
                 log.warn("Could not calculate expiration time for Geofence {}, will not set expiration",
                         geofenceId);
@@ -136,48 +152,87 @@ public class GeofenceDeploymentConverter {
             // Continue without setting expiration time
         }
 
-        // Handle geofence data
-        GeofenceFeatureCollection geofence = configRequest.getOverrideGeofence();
-        if (geofence != null) {
-            // Use the override geofence directly
-            geofenceRequest.setGeojson(geofence);
+        GeofenceFeatureCollection geofence = overrideGeofenceResolver.resolve(
+                configRequest.getOverrideGeofence(),
+                () -> extractGeofenceFromMessage(messageFrame));
+        geofenceRequest.setGeojson(geofence);
 
-            try {
-                List<String> geohashes = geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence,
-                        geofenceId);
-                geofenceRequest.setGeohashes(geohashes);
-            } catch (NoAvailableGeohashException ex) {
-                throw new ErrorResponseException(
-                        new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
-                        HttpStatus.CONFLICT);
-            } catch (RuntimeException ex) {
-                throw ex;
-            }
-        } else {
-            // Extract geofence from the ASN.1 message if no override is provided
-            log.debug("No override geofence provided, extracting geofence from ASN.1 message");
-            geofence = extractGeofenceFromMessage(messageFrame);
-            geofenceRequest.setGeojson(geofence);
-
-            try {
-                List<String> geohashes = geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence,
-                        geofenceId);
-                geofenceRequest.setGeohashes(geohashes);
-            } catch (NoAvailableGeohashException ex) {
-                throw new ErrorResponseException(
-                        new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
-                        HttpStatus.CONFLICT);
-            } catch (RuntimeException ex) {
-                throw ex;
-            }
+        try {
+            boolean usedOverride = geofence == configRequest.getOverrideGeofence();
+            List<String> geohashes = geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                    geofence, geofenceId, !usedOverride);
+            geofenceRequest.setGeohashes(geohashes);
+        } catch (NoAvailableGeohashException ex) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
+                    HttpStatus.CONFLICT);
+        } catch (RuntimeException ex) {
+            throw ex;
         }
 
         return geofenceRequest;
     }
 
     /**
+     * Compute the geohashes that would be selected for a deposit request without
+     * persisting anything. Returns the resolved geofence and selected geohashes.
+     */
+    /**
+     * @param checkConflicts when {@code true}, avoids geohashes already claimed by
+     *                       active deployments (requires a DB round-trip); when
+     *                       {@code false} (default), returns the raw selection
+     *                       without querying active state — faster and suitable for
+     *                       planning purposes.
+     */
+    public GeohashPreviewResponse previewGeohashes(DepositRequest request, boolean checkConflicts) {
+        MessageFrame<?> messageFrame;
+        try {
+            messageFrame = parseMessageFrame(request.getAsn1Hex());
+        } catch (JsonProcessingException e) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("Failed to parse ASN.1 message", e.getMessage()),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        String geofenceId = messageFrame == null
+                ? generateFallbackGeofenceId(request.getAsn1Hex())
+                : generateGeofenceIdByMessageType(messageFrame, request.getAsn1Hex());
+
+        if (messageFrame == null
+                && (request.getOverrideGeofence() == null
+                        || overrideGeofenceResolver.exceedsThreshold(request.getOverrideGeofence()))) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("Failed to detect message type", "ASN.1 parsing returned null frame"),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+        GeofenceFeatureCollection geofence = overrideGeofenceResolver.resolve(
+                request.getOverrideGeofence(),
+                () -> extractGeofenceFromMessage(messageFrame));
+
+        try {
+            boolean usedOverride = geofence == request.getOverrideGeofence();
+            List<String> geohashes = checkConflicts
+                    ? geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                            geofence, geofenceId, !usedOverride)
+                    : geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence,
+                            geofenceProperties.getGeohash().getPrecision(), java.util.Set.of(),
+                            !usedOverride);
+            return GeohashPreviewResponse.builder()
+                    .geofenceId(geofenceId)
+                    .geofence(geofence)
+                    .geohashes(geohashes)
+                    .geohashCount(geohashes.size())
+                    .build();
+        } catch (usdot.v2x.app.api.exceptions.NoAvailableGeohashException ex) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
      * Generate a unique Geofence ID based on message type
-     * 
+     *
      * @param messageFrame The parsed message frame
      * @param hexPayload   The hex payload
      * @return A unique Geofence ID
@@ -333,7 +388,7 @@ public class GeofenceDeploymentConverter {
             }
 
             TimCoordinateConverter.TimGeometry geometry = timCoordinateConverter.convertTimToCoordinates(dataFrames);
-            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+            return convertGeometryToGeofenceFeatureCollection(geometry.geofenceGeometry);
         } catch (ErrorResponseException e) {
             throw e;
         } catch (Exception e) {
@@ -369,7 +424,7 @@ public class GeofenceDeploymentConverter {
             }
 
             MapCoordinateConverter.MapGeometry geometry = mapCoordinateConverter.convertMapToCoordinates(intersections);
-            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+            return convertGeometryToGeofenceFeatureCollection(geometry.geofenceGeometry);
         } catch (ErrorResponseException e) {
             throw e;
         } catch (Exception e) {
@@ -382,18 +437,17 @@ public class GeofenceDeploymentConverter {
     }
 
     /**
-     * Convert JTS Polygon to GeofenceFeatureCollection
+     * Convert a supported JTS geometry to GeofenceFeatureCollection.
      * 
-     * @param polygon The JTS Polygon to convert
-     * @return GeofenceFeatureCollection containing the polygon
+     * @param geometry The JTS geometry to convert
+     * @return GeofenceFeatureCollection containing the geometry
      */
-    private GeofenceFeatureCollection convertPolygonToGeofenceFeatureCollection(Polygon polygon) {
+    private GeofenceFeatureCollection convertGeometryToGeofenceFeatureCollection(Geometry geometry) {
         GeofenceFeature feature = new GeofenceFeature();
         feature.setType("Feature");
         feature.setProperties(new HashMap<>());
 
-        // Use the helper to convert JTS Polygon to custom geometry
-        GeofenceFeatureHelper.setGeometry(feature, polygon);
+        GeofenceFeatureHelper.setGeometry(feature, geometry);
 
         GeofenceFeatureCollection geoFence = new GeofenceFeatureCollection();
         geoFence.setType("FeatureCollection");

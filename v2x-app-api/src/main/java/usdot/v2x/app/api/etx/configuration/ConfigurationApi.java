@@ -24,8 +24,9 @@ import usdot.v2x.app.api.utils.UperUtil;
 import usdot.v2x.app.api.utils.TimCoordinateConverter;
 import usdot.v2x.app.api.utils.MapCoordinateConverter;
 import usdot.v2x.app.api.utils.GeofenceFeatureHelper;
+import usdot.v2x.app.api.utils.OverrideGeofenceResolver;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeature;
-import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.geom.Geometry;
 
 /**
  * API client for ETX Configuration API operations.
@@ -76,8 +77,8 @@ public class ConfigurationApi {
     private DistributionType distributionType;
     private TimCoordinateConverter timCoordinateConverter;
     private MapCoordinateConverter mapCoordinateConverter;
+    private OverrideGeofenceResolver overrideGeofenceResolver;
 
-    // For testing to mock the current time
     @Autowired
     public ConfigurationApi(
             EtxProperties etxProperties,
@@ -85,9 +86,12 @@ public class ConfigurationApi {
             WebClient.Builder webClientBuilder,
             MessageFrameCodec codec,
             ObjectMapper jsonMapper,
-            @Qualifier("xmlMapper") XmlMapper xmlMapper) {
-        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, Clock.systemUTC(), null,
-                null);
+            @Qualifier("xmlMapper") XmlMapper xmlMapper,
+            TimCoordinateConverter timCoordinateConverter,
+            MapCoordinateConverter mapCoordinateConverter,
+            OverrideGeofenceResolver overrideGeofenceResolver) {
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, Clock.systemUTC(),
+                timCoordinateConverter, mapCoordinateConverter, overrideGeofenceResolver);
     }
 
     public ConfigurationApi(
@@ -98,7 +102,7 @@ public class ConfigurationApi {
             ObjectMapper jsonMapper,
             XmlMapper xmlMapper,
             Clock clock) {
-        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock, null, null);
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock, null, null, null);
     }
 
     public ConfigurationApi(
@@ -111,6 +115,21 @@ public class ConfigurationApi {
             Clock clock,
             TimCoordinateConverter timCoordinateConverter,
             MapCoordinateConverter mapCoordinateConverter) {
+        this(etxProperties, tokenService, webClientBuilder, codec, jsonMapper, xmlMapper, clock,
+                timCoordinateConverter, mapCoordinateConverter, null);
+    }
+
+    public ConfigurationApi(
+            EtxProperties etxProperties,
+            TokenService tokenService,
+            WebClient.Builder webClientBuilder,
+            MessageFrameCodec codec,
+            ObjectMapper jsonMapper,
+            XmlMapper xmlMapper,
+            Clock clock,
+            TimCoordinateConverter timCoordinateConverter,
+            MapCoordinateConverter mapCoordinateConverter,
+            OverrideGeofenceResolver overrideGeofenceResolver) {
         this.etxVendorId = etxProperties.getVendorId();
         this.tokenService = tokenService;
         this.webClient = webClientBuilder.baseUrl(etxProperties.getEndpoint() + "/api/v1/application/configurations")
@@ -122,6 +141,7 @@ public class ConfigurationApi {
         this.distributionType = etxProperties.getConfiguration().getDistributionType();
         this.timCoordinateConverter = timCoordinateConverter;
         this.mapCoordinateConverter = mapCoordinateConverter;
+        this.overrideGeofenceResolver = overrideGeofenceResolver;
     }
 
     /**
@@ -373,14 +393,19 @@ public class ConfigurationApi {
     public Mono<ResponseEntity<Void>> deposit(DepositRequest request) {
         return Mono.fromCallable(() -> parseMessageFrame(request.getAsn1Hex()))
                 .flatMap(messageFrame -> {
-                    // Extract geofence from message if override geofence is not provided
-                    GeofenceFeatureCollection deploymentRegion = request.getOverrideGeofence();
-                    if (deploymentRegion == null) {
-                        try {
+                    GeofenceFeatureCollection deploymentRegion;
+                    try {
+                        if (overrideGeofenceResolver != null) {
+                            deploymentRegion = overrideGeofenceResolver.resolve(
+                                    request.getOverrideGeofence(),
+                                    () -> extractGeofenceFromMessage(messageFrame));
+                        } else if (request.getOverrideGeofence() == null) {
                             deploymentRegion = extractGeofenceFromMessage(messageFrame);
-                        } catch (ErrorResponseException e) {
-                            return Mono.error(e);
+                        } else {
+                            deploymentRegion = request.getOverrideGeofence();
                         }
+                    } catch (ErrorResponseException e) {
+                        return Mono.error(e);
                     }
                     return createOrUpdateGeofenceWithDeploymentRegion(request, messageFrame, deploymentRegion);
                 })
@@ -637,7 +662,7 @@ public class ConfigurationApi {
             }
 
             TimCoordinateConverter.TimGeometry geometry = timCoordinateConverter.convertTimToCoordinates(dataFrames);
-            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+            return convertGeometryToGeofenceFeatureCollection(geometry.geofenceGeometry);
         } catch (ErrorResponseException e) {
             throw e;
         } catch (Exception e) {
@@ -673,7 +698,7 @@ public class ConfigurationApi {
             }
 
             MapCoordinateConverter.MapGeometry geometry = mapCoordinateConverter.convertMapToCoordinates(intersections);
-            return convertPolygonToGeofenceFeatureCollection(geometry.geofenceGeometry);
+            return convertGeometryToGeofenceFeatureCollection(geometry.geofenceGeometry);
         } catch (ErrorResponseException e) {
             throw e;
         } catch (Exception e) {
@@ -686,18 +711,17 @@ public class ConfigurationApi {
     }
 
     /**
-     * Convert JTS Polygon to GeofenceFeatureCollection
+     * Convert a supported JTS geometry to GeofenceFeatureCollection.
      * 
-     * @param polygon The JTS Polygon to convert
-     * @return GeofenceFeatureCollection containing the polygon
+     * @param geometry The JTS geometry to convert
+     * @return GeofenceFeatureCollection containing the geometry
      */
-    private GeofenceFeatureCollection convertPolygonToGeofenceFeatureCollection(Polygon polygon) {
+    private GeofenceFeatureCollection convertGeometryToGeofenceFeatureCollection(Geometry geometry) {
         GeofenceFeature feature = new GeofenceFeature();
         feature.setType("Feature");
         feature.setProperties(new HashMap<>());
 
-        // Use the helper to convert JTS Polygon to custom geometry
-        GeofenceFeatureHelper.setGeometry(feature, polygon);
+        GeofenceFeatureHelper.setGeometry(feature, geometry);
 
         GeofenceFeatureCollection geoFence = new GeofenceFeatureCollection();
         geoFence.setType("FeatureCollection");

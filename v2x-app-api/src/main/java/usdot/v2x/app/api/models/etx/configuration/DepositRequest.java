@@ -13,6 +13,9 @@ public class DepositRequest {
     private String asn1Hex;
 
     @JsonProperty("override_geofence")
-    @Schema(description = "Override Geofence for ETX deployment. If not set, the geofence will be extracted from the provided message", required = false)
+    @Schema(description = "Override Geofence for ETX deployment. If not set, the geofence will be extracted from the provided message. "
+            + "If the override covers more geohashes than geofence.limits.override-geohash-threshold, "
+            + "the partner API generates a geofence from the message instead. "
+            + "MQTT deposits that keep the override persist every intersecting geohash cell rather than 3×3 representatives.", required = false)
     private GeofenceFeatureCollection overrideGeofence;
 }

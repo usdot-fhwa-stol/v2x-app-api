@@ -1,0 +1,88 @@
+{
+    "messageId": 31,
+    "value": {
+        "TravelerInformation": {
+            "msgCnt": 1,
+            "timeStamp": 61920,
+            "packetID": "8D442EF0020C6B1A09",
+            "urlB": "null",
+            "dataFrames": [
+                {
+                    "doNotUse1": 0,
+                    "frameType": "advisory",
+                    "msgId": {
+                        "roadSignID": {
+                            "position": {
+                                "lat": 400000000,
+                                "long": -1050000000
+                            },
+                            "viewAngle": "FFFF",
+                            "mutcdCode": "warning"
+                        }
+                    },
+                    "startYear": 2025,
+                    "startTime": 61920,
+                    "durationTime": 28800,
+                    "priority": 5,
+                    "doNotUse2": 0,
+                    "regions": [
+                        {
+                            "name": "EastWestPath",
+                            "id": {
+                                "region": 0,
+                                "id": 0
+                            },
+                            "anchor": {
+                                "lat": 400000000,
+                                "long": -1050000000
+                            },
+                            "laneWidth": 500,
+                            "directionality": "both",
+                            "closedPath": false,
+                            "direction": "FFFF",
+                            "description": {
+                                "path": {
+                                    "scale": 0,
+                                    "offset": {
+                                        "xy": {
+                                            "nodes": [
+                                                {
+                                                    "delta": {
+                                                        "node-XY6": {
+                                                            "x": 20000,
+                                                            "y": 0
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "delta": {
+                                                        "node-XY6": {
+                                                            "x": 20000,
+                                                            "y": 0
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    "doNotUse3": 0,
+                    "doNotUse4": 0,
+                    "content": {
+                        "advisory": [
+                            {
+                                "item": {
+                                    "itis": 4868
+                                }
+                            }
+                        ]
+                    },
+                    "url": "null"
+                }
+            ]
+        }
+    }
+}

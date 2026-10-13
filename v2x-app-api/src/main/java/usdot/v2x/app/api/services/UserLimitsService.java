@@ -47,12 +47,14 @@ public class UserLimitsService {
     @Transactional
     public UserLimits createOrUpdateUserLimits(String username, String vendorId,
             Integer maxRegistrations, String updatedBy) {
-        Optional<UserLimits> existingLimits = userLimitsRepository.findByUsernameAndVendorId(username, vendorId);
+        Optional<UserLimits> existingLimits = userLimitsRepository.findByUsernameAndVendorIdIgnoreActive(username,
+                vendorId);
 
         if (existingLimits.isPresent()) {
-            // Update existing limits
+            // Update existing limits (including re-activation if soft-deleted)
             UserLimits limits = existingLimits.get();
             limits.setMaxRegistrations(maxRegistrations);
+            limits.setIsActive(true);
             limits.setUpdatedBy(updatedBy);
             limits.setUpdatedAt(Instant.now());
 
@@ -152,6 +154,37 @@ public class UserLimitsService {
      */
     public boolean hasCustomLimits(String username, String vendorId) {
         return userLimitsRepository.existsByUsernameAndVendorId(username, vendorId);
+    }
+
+    /**
+     * Check if a user-limits row already exists, including soft-deleted rows.
+     * The unique constraint is on (username, vendor_id) regardless of is_active.
+     */
+    public boolean existsIncludingInactive(String username, String vendorId) {
+        return userLimitsRepository.existsByUsernameAndVendorIdIgnoreActive(username, vendorId);
+    }
+
+    /**
+     * Re-activate a soft-deleted user-limits row without changing max_registrations.
+     * Needed because the unique constraint still occupies (username, vendor_id).
+     */
+    @Transactional
+    public void reactivateIfInactive(String username, String vendorId, String updatedBy) {
+        Optional<UserLimits> existing = userLimitsRepository.findByUsernameAndVendorIdIgnoreActive(username, vendorId);
+        if (existing.isEmpty()) {
+            return;
+        }
+
+        UserLimits limits = existing.get();
+        if (Boolean.TRUE.equals(limits.getIsActive())) {
+            return;
+        }
+
+        limits.setIsActive(true);
+        limits.setUpdatedBy(updatedBy);
+        limits.setUpdatedAt(Instant.now());
+        userLimitsRepository.save(limits);
+        log.info("Re-activated user limits for user: {}, vendor: {}", username, vendorId);
     }
 
     /**
