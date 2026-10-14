@@ -46,7 +46,15 @@ public class EtxProperties {
 
     @Data
     public static class AclRules {
-        private boolean timSubscribeFilterEnabled;
+        private SubscribeFilter subscribeFilter = new SubscribeFilter();
+    }
+
+    @Data
+    public static class SubscribeFilter {
+        private boolean enabled;
+        private List<String> geoRelevanceMessageTypes = List.of("BSM", "SPAT", "MAP", "TIM");
+        private boolean geoRelevanceIncludeVendors;
+        private boolean privateEnabled;
     }
 
     @Data

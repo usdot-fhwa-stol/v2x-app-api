@@ -71,7 +71,7 @@ class RegistrationRestControllerTest {
         }
 
         EtxProperties.AclRules aclRules = new EtxProperties.AclRules();
-        aclRules.setTimSubscribeFilterEnabled(true);
+        aclRules.getSubscribeFilter().setEnabled(true);
         lenient().when(etxProperties.getAclRules()).thenReturn(aclRules);
 
         // Setup SecurityContextUtils mock
@@ -231,7 +231,7 @@ class RegistrationRestControllerTest {
     @Test
     void testGetAcls_FilterDisabled_ReturnsUnfiltered() {
         EtxProperties.AclRules aclRules = new EtxProperties.AclRules();
-        aclRules.setTimSubscribeFilterEnabled(false);
+        aclRules.getSubscribeFilter().setEnabled(false);
         when(etxProperties.getAclRules()).thenReturn(aclRules);
 
         List<String> subscribeTopics = List.of(
@@ -267,7 +267,7 @@ class RegistrationRestControllerTest {
         // Assert
         StepVerifier.create(result)
                 .assertNext(response -> assertEquals(
-                        List.of(AclRulesFilter.TIM_SUBSCRIBE_TOPIC),
+                        List.of("vzimp/1/GeoRelevance/*/*/Public/j2735_gr|j2735/SPAT|MAP|TIM/*"),
                         ((Map<String, Object>) ((List<?>) response).get(0)).get("subscribe")))
                 .verifyComplete();
         verify(registrationApi).getDeviceRoles();

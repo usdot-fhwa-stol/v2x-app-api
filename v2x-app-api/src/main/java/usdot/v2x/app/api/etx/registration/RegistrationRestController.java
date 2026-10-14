@@ -279,8 +279,9 @@ public class RegistrationRestController {
     })
     public Mono<Object> getAcls() {
         Mono<Object> deviceRoles = registrationApi.getDeviceRoles();
-        if (etxProperties.getAclRules().isTimSubscribeFilterEnabled()) {
-            return deviceRoles.map(AclRulesFilter::filterSubscribeTopics);
+        EtxProperties.SubscribeFilter subscribeFilter = etxProperties.getAclRules().getSubscribeFilter();
+        if (subscribeFilter.isEnabled()) {
+            return deviceRoles.map(aclRules -> AclRulesFilter.filterSubscribeTopics(aclRules, subscribeFilter));
         }
         return deviceRoles;
     }
