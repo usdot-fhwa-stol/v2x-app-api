@@ -70,7 +70,7 @@ services:
     environment:
       KC_HTTP_ENABLED: true
       KC_PROXY_HEADERS: xforwarded
-      KC_HOSTNAME: ${KC_DOMAIN}
+      KC_HOSTNAME: ${KEYCLOAK_ENDPOINT}
       VIRTUAL_HOST: ${KC_DOMAIN}
       VIRTUAL_PORT: 8080
       LETSENCRYPT_HOST: ${KC_DOMAIN}

@@ -37,6 +37,8 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      # Use the same configured URL for token issuance and API issuer validation.
+      KC_HOSTNAME: ${KEYCLOAK_ENDPOINT}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-v2x_app_db}
       KC_DB_USERNAME: ${POSTGRES_USER:-admin_user}
@@ -51,8 +53,6 @@ services:
       - start-dev
       - --log-level=${KC_LOGGING_LEVEL:-WARN}
       - --import-realm
-    volumes:
-      - keycloak:/opt/keycloak/data/
     networks:
       - v2x-api-network
     depends_on:
@@ -166,7 +166,6 @@ services:
         condition: service_started
 
 volumes:
-  keycloak:
   postgres_data:
 
 
