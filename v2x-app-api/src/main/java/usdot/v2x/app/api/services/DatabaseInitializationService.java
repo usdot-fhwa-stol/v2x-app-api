@@ -8,7 +8,6 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Service for initializing database with default configuration data.
@@ -27,7 +26,6 @@ public class DatabaseInitializationService implements ApplicationRunner {
     private EtxProperties etxProperties;
 
     @Override
-    @Transactional
     @ConditionalOnProperty(value = { "etx.enabled" }, havingValue = "true")
     public void run(ApplicationArguments args) throws Exception {
         log.info("Starting database initialization...");
@@ -37,8 +35,8 @@ public class DatabaseInitializationService implements ApplicationRunner {
             initializeUserLimits();
             log.info("Database initialization completed successfully");
         } catch (Exception e) {
+            // Seeding must not take down the API. Existing unique rows are expected on restart.
             log.error("Failed to initialize database: {}", e.getMessage(), e);
-            throw e;
         }
     }
 
@@ -81,8 +79,8 @@ public class DatabaseInitializationService implements ApplicationRunner {
                     String username = defaultUsers[i];
                     int limit = defaultLimits[i];
 
-                    // Check if user limits already exist for this user and vendor
-                    if (!userLimitsService.hasCustomLimits(username, vendor.getId())) {
+                    // Unique constraint is on (username, vendor_id), including soft-deleted rows
+                    if (!userLimitsService.existsIncludingInactive(username, vendor.getId())) {
                         userLimitsService.createOrUpdateUserLimits(
                                 username,
                                 vendor.getId(),
