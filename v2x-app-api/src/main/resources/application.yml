@@ -21,6 +21,12 @@ etx:
     cleanup:
       enabled: ${GEOFENCE_CLEANUP_ENABLED:false}
       interval: ${GEOFENCE_CLEANUP_INTERVAL:5m}
+  acl-rules:
+    subscribe-filter:
+      enabled: ${ACL_RULES_SUBSCRIBE_FILTER_ENABLED:false}
+      geo-relevance-message-types: ${ACL_RULES_GEORELEVANCE_SUBSCRIBE_MESSAGE_TYPES:BSM,SPAT,MAP,TIM}
+      geo-relevance-include-vendors: ${ACL_RULES_GEORELEVANCE_SUBSCRIBE_INCLUDE_VENDORS:false}
+      private-enabled: ${ACL_RULES_PRIVATE_SUBSCRIBE_ENABLED:false}
 thingspace:
   enabled: ${THINGSPACE_ENABLED:true}
   endpoint: ${THINGSPACE_ENDPOINT:https://thingspace.verizon.com}

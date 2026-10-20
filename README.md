@@ -96,6 +96,10 @@ The repository consists of four main services:
    - `ETX_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per user (default: `5`)
    - `ETX_DEPOSITOR_VENDOR_REGISTRATION_LIMIT`: Max registrations for depositor vendor (default: `10`)
    - `ETX_DEPOSITOR_VENDOR_USER_REGISTRATION_LIMIT`: Max registrations per depositor user (default: `3`)
+   - `ACL_RULES_SUBSCRIBE_FILTER_ENABLED`: Narrow the ACL subscribe topics returned to devices (default: `false`). When enabled, only `j2735_gr|j2735` GeoRelevance topics (excluding `Small`) and, optionally, the Private topic are returned. Topics are only narrowed from what Thingspace returns, never added, and rules without existing subscribe permissions are left unchanged.
+   - `ACL_RULES_GEORELEVANCE_SUBSCRIBE_MESSAGE_TYPES`: Comma-separated GeoRelevance message types to keep (default: `BSM,SPAT,MAP,TIM`). Wildcard-vendor topics (e.g. SPAT/MAP) are kept with their `*` vendor.
+   - `ACL_RULES_GEORELEVANCE_SUBSCRIBE_INCLUDE_VENDORS`: Keep all vendors listed in the ACL instead of only `Public` (default: `false`).
+   - `ACL_RULES_PRIVATE_SUBSCRIBE_ENABLED`: Keep the `vzimp/1/Private/...` subscribe topic (default: `false`).
 
    **Geofence Configuration:**
    - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `100.0`)

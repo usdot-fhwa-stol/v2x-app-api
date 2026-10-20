@@ -1,5 +1,6 @@
 package usdot.v2x.app.api.etx.registration;
 
+import usdot.v2x.app.api.config.etx.EtxProperties;
 import usdot.v2x.app.api.models.etx.ErrorResponse;
 import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.registration.*;
@@ -43,6 +44,9 @@ public class RegistrationRestController {
 
     @Autowired
     private SecurityContextUtils securityContextUtils;
+
+    @Autowired
+    private EtxProperties etxProperties;
 
     RegistrationRestController(
             RegistrationApi registrationApi) {
@@ -274,7 +278,12 @@ public class RegistrationRestController {
             @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
     })
     public Mono<Object> getAcls() {
-        return registrationApi.getDeviceRoles();
+        Mono<Object> deviceRoles = registrationApi.getDeviceRoles();
+        EtxProperties.SubscribeFilter subscribeFilter = etxProperties.getAclRules().getSubscribeFilter();
+        if (subscribeFilter.isEnabled()) {
+            return deviceRoles.map(aclRules -> AclRulesFilter.filterSubscribeTopics(aclRules, subscribeFilter));
+        }
+        return deviceRoles;
     }
 
 }
