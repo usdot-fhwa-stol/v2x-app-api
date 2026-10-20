@@ -24,6 +24,7 @@ public class EtxProperties {
     private String password;
     private RegistrationLimits registration = new RegistrationLimits();
     private Configuration configuration = new Configuration();
+    private AclRules aclRules = new AclRules();
 
     @Data
     public static class RegistrationLimits {
@@ -41,6 +42,19 @@ public class EtxProperties {
     public static class Configuration {
         private DistributionType distributionType;
         private ConfigurationCleanup cleanup;
+    }
+
+    @Data
+    public static class AclRules {
+        private SubscribeFilter subscribeFilter = new SubscribeFilter();
+    }
+
+    @Data
+    public static class SubscribeFilter {
+        private boolean enabled;
+        private List<String> geoRelevanceMessageTypes = List.of("BSM", "SPAT", "MAP", "TIM");
+        private boolean geoRelevanceIncludeVendors;
+        private boolean privateEnabled;
     }
 
     @Data
