@@ -63,6 +63,7 @@ geofence:
     min-geohashes: ${GEOFENCE_LIMITS_MIN_GEOHASHES:4}
     allow-overlapping-geohashes: ${GEOFENCE_LIMITS_ALLOW_OVERLAPPING_GEOHASHES:true}
     representative-filter-threshold: ${GEOFENCE_LIMITS_REPRESENTATIVE_FILTER_THRESHOLD:20}
+    override-geohash-threshold: ${GEOFENCE_LIMITS_OVERRIDE_GEOHASH_THRESHOLD:50}
   expiration:
     cleanup:
       enabled: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:true}
