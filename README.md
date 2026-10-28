@@ -102,7 +102,9 @@ The repository consists of four main services:
    - `ACL_RULES_PRIVATE_SUBSCRIBE_ENABLED`: Keep the `vzimp/1/Private/...` subscribe topic (default: `false`).
 
    **Geofence Configuration:**
-   - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `100.0`)
+   - `GEOFENCE_OFFSET_METERS`: Geofence offset in meters (default: `50.0`). For path-based TIMs this is applied as a lateral (width) buffer in addition to lane width; every path end also gets a full-width square cap reaching `lane width + GEOFENCE_OFFSET_METERS` past the end vertex.
+   - `GEOFENCE_PATH_LENGTH_OFFSET_METERS`: Extra meters to extend the first and last open (path-based) TIM regions along the path (default: `0.0`). Middle regions are not length-extended, so adjacent TIM segments do not overlap. The extension is a triangular wedge added beyond the square cap, so an extended end reaches `lane width + GEOFENCE_OFFSET_METERS + GEOFENCE_PATH_LENGTH_OFFSET_METERS` past the end vertex. The square-cap corridor is never reduced. Closed-path and circle TIMs are unaffected.
+   - `GEOFENCE_PATH_EXTENSION_TIP_WIDTH_METERS`: Lateral width in meters at the outer tip of those triangular extensions (default: `0.0`, pointed triangle). Set to `2 × (lane width + GEOFENCE_OFFSET_METERS)` for a full-width rectangular extension.
    - `DEFAULT_LANE_WIDTH_CM`: Default lane width in centimeters (default: `1500.0`)
    - `GEOFENCE_GEOHASH_PRECISION`: Geohash precision for geofence generation (default: `7`). This determines the spatial resolution of geohash-based geofences. See [Geohash precision documentation](https://en.wikipedia.org/wiki/Geohash#Digits_and_precision_in_km) for details on how precision affects geographic area coverage.
    - `GEOFENCE_LIMITS_MAX_GEOHASHES`: Maximum number of geohashes allowed per geofence deployment (default: `500`)
