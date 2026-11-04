@@ -12,6 +12,7 @@ import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformation;
 import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerDataFrame;
 import us.dot.its.jpo.asn.j2735.r2024.TravelerInformation.TravelerInformationMessageFrame;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -38,12 +39,12 @@ public class TimExpirationCalculator {
     /**
      * Calculate the expiration time for a TIM message based on its J2735 content.
      * 
-     * @param hexPayload       The ASN.1 hex payload of the TIM message
-     * @param gracePeriodHours Additional grace period in hours after calculated
-     *                         expiration
-     * @return The calculated expiration time, or null if calculation fails
+     * @param hexPayload  The ASN.1 hex payload of the TIM message
+     * @param gracePeriod Additional grace period after calculated expiration
+     * @return The calculated expiration time, null when the TIM is configured to never
+     *         expire ({@code durationTime} = 32000), or null if calculation fails
      */
-    public Instant calculateExpirationTime(String hexPayload, int gracePeriodHours) {
+    public Instant calculateExpirationTime(String hexPayload, Duration gracePeriod) {
         try {
             MessageFrame<?> messageFrame = parseMessageFrame(hexPayload);
 
@@ -51,7 +52,7 @@ public class TimExpirationCalculator {
                 TravelerInformationMessageFrame timFrame = (TravelerInformationMessageFrame) messageFrame;
                 TravelerInformation tim = timFrame.getValue();
 
-                return calculateExpirationFromTim(tim, gracePeriodHours);
+                return calculateExpirationFromTim(tim, gracePeriod);
             } else {
                 log.warn("Message is not a TIM message, cannot calculate expiration time");
                 return null;
@@ -65,12 +66,11 @@ public class TimExpirationCalculator {
     /**
      * Calculate expiration time from a decoded TIM message.
      * 
-     * @param tim              The decoded TravelerInformation message
-     * @param gracePeriodHours Additional grace period in hours after calculated
-     *                         expiration
+     * @param tim         The decoded TravelerInformation message
+     * @param gracePeriod Additional grace period after calculated expiration
      * @return The calculated expiration time, or null if calculation fails
      */
-    private Instant calculateExpirationFromTim(TravelerInformation tim, int gracePeriodHours) {
+    private Instant calculateExpirationFromTim(TravelerInformation tim, Duration gracePeriod) {
         try {
             List<TravelerDataFrame> dataFrames = tim.getDataFrames();
 
@@ -87,19 +87,53 @@ public class TimExpirationCalculator {
             long startTimeMinutes = dataFrame.getStartTime().getValue();
             long durationTime = dataFrame.getDurationTime().getValue();
 
+            if (TimExpirationUtils.isNeverExpiring(durationTime)) {
+                log.debug("TIM durationTime is {} minutes (maximum), treating as never expire",
+                        TimExpirationUtils.NEVER_EXPIRE_DURATION_MINUTES);
+                return null;
+            }
+
             // Calculate the expiration time using utility method
             Instant expiration = TimExpirationUtils.calculateExpirationTime(
-                    (int) startYear, startTimeMinutes, durationTime, gracePeriodHours);
+                    (int) startYear, startTimeMinutes, durationTime, gracePeriod);
 
             log.debug("Calculated TIM expiration: startYear={}, startTimeMinutes={}, durationTime={}, " +
-                    "expirationTime={} (with {}h grace period)",
-                    startYear, startTimeMinutes, durationTime, expiration, gracePeriodHours);
+                    "expirationTime={} (with {} grace period)",
+                    startYear, startTimeMinutes, durationTime, expiration, gracePeriod);
 
             return expiration;
 
         } catch (Exception e) {
             log.error("Error calculating expiration from TIM data frame: {}", e.getMessage(), e);
             return null;
+        }
+    }
+
+    /**
+     * Check whether a TIM message is configured to never expire.
+     *
+     * @param hexPayload The ASN.1 hex payload of the TIM message
+     * @return True when {@code durationTime} is 32000 minutes, false otherwise
+     */
+    public boolean isNeverExpiring(String hexPayload) {
+        try {
+            MessageFrame<?> messageFrame = parseMessageFrame(hexPayload);
+
+            if (!(messageFrame instanceof TravelerInformationMessageFrame)) {
+                return false;
+            }
+
+            TravelerInformation tim = ((TravelerInformationMessageFrame) messageFrame).getValue();
+            List<TravelerDataFrame> dataFrames = tim.getDataFrames();
+            if (dataFrames == null || dataFrames.isEmpty()) {
+                return false;
+            }
+
+            long durationTime = dataFrames.get(0).getDurationTime().getValue();
+            return TimExpirationUtils.isNeverExpiring(durationTime);
+        } catch (Exception e) {
+            log.error("Error checking TIM never-expire status: {}", e.getMessage(), e);
+            return false;
         }
     }
 

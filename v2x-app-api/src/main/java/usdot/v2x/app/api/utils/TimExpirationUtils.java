@@ -1,5 +1,6 @@
 package usdot.v2x.app.api.utils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -26,6 +27,20 @@ import java.time.ZoneOffset;
  * - End: Start time + 2 minutes = March 1, 2025 15:00
  */
 public class TimExpirationUtils {
+
+    /**
+     * J2735 maximum value for {@code durationTime} (32000 minutes), meaning the TIM
+     * should not expire.
+     */
+    public static final long NEVER_EXPIRE_DURATION_MINUTES = 32000L;
+
+    /**
+     * Returns true when {@code durationTime} is the J2735 maximum (32000 minutes),
+     * indicating the TIM should never expire.
+     */
+    public static boolean isNeverExpiring(long durationTime) {
+        return durationTime == NEVER_EXPIRE_DURATION_MINUTES;
+    }
 
     /**
      * Convert J2735 timing fields to a LocalDateTime representing the start time.
@@ -59,14 +74,18 @@ public class TimExpirationUtils {
      * @param startYear        The year when the TIM becomes valid
      * @param startTimeMinutes Minutes offset from January 1st of startYear
      * @param durationTime     Duration in minutes that the TIM remains valid
-     * @param gracePeriodHours Additional grace period in hours after calculated
-     *                         expiration
-     * @return The calculated expiration time as an Instant
+     * @param gracePeriod      Additional grace period after calculated expiration
+     * @return The calculated expiration time as an Instant, or null when
+     *         {@code durationTime} is {@link #NEVER_EXPIRE_DURATION_MINUTES}
      */
     public static Instant calculateExpirationTime(int startYear, long startTimeMinutes, long durationTime,
-            int gracePeriodHours) {
+            Duration gracePeriod) {
+        if (isNeverExpiring(durationTime)) {
+            return null;
+        }
+        Duration effectiveGracePeriod = gracePeriod != null ? gracePeriod : Duration.ZERO;
         LocalDateTime endTime = calculateEndTime(startYear, startTimeMinutes, durationTime);
-        LocalDateTime expirationTime = endTime.plusHours(gracePeriodHours);
+        LocalDateTime expirationTime = endTime.plus(effectiveGracePeriod);
         return expirationTime.toInstant(ZoneOffset.UTC);
     }
 
@@ -79,6 +98,9 @@ public class TimExpirationUtils {
      * @return True if the TIM is currently valid, false otherwise
      */
     public static boolean isTimCurrentlyValid(int startYear, long startTimeMinutes, long durationTime) {
+        if (isNeverExpiring(durationTime)) {
+            return true;
+        }
         LocalDateTime endTime = calculateEndTime(startYear, startTimeMinutes, durationTime);
         LocalDateTime currentTime = LocalDateTime.now(ZoneOffset.UTC);
         return endTime.isAfter(currentTime);

@@ -99,12 +99,13 @@ public class GeofenceExpirationRestController {
     public ResponseEntity<Map<String, Object>> getCleanupStatus() {
         try {
             int intervalMinutes = geofenceExpirationCleanupService.getIntervalMinutes();
-            int gracePeriodHours = geofenceExpirationCleanupService.getGracePeriodHours();
+            var gracePeriod = geofenceExpirationCleanupService.getGracePeriod();
 
             Map<String, Object> status = new HashMap<>();
             status.put("enabled", true);
             status.put("intervalMinutes", intervalMinutes);
-            status.put("gracePeriodHours", gracePeriodHours);
+            status.put("gracePeriod", gracePeriod.toString());
+            status.put("gracePeriodHours", gracePeriod.toHours());
             status.put("nextCleanupInMinutes", intervalMinutes);
 
             return ResponseEntity.ok(status);

@@ -32,21 +32,20 @@ public class GeofenceExpirationCleanupService {
     @ConditionalOnProperty(name = "geofence.expiration.cleanup.enabled", havingValue = "true", matchIfMissing = true)
     public void cleanupExpiredGeofenceDeployments() {
         try {
-            Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
-            long gracePeriodHours = gracePeriod != null ? gracePeriod.toHours() : 2;
+            Duration gracePeriod = getGracePeriod();
 
-            log.debug("Starting scheduled cleanup of expired Geofence deployments (grace period: {} hours)",
-                    gracePeriodHours);
+            log.debug("Starting scheduled cleanup of expired Geofence deployments (grace period: {})",
+                    gracePeriod);
 
             int deactivatedCount = geofenceDeploymentService.deactivateExpiredGeofenceDeployments();
 
             if (deactivatedCount > 0) {
                 log.info(
-                        "Scheduled cleanup completed: {} expired Geofence deployments deactivated (grace period: {} hours)",
-                        deactivatedCount, gracePeriodHours);
+                        "Scheduled cleanup completed: {} expired Geofence deployments deactivated (grace period: {})",
+                        deactivatedCount, gracePeriod);
             } else {
-                log.debug("Scheduled cleanup completed: no expired Geofence deployments found (grace period: {} hours)",
-                        gracePeriodHours);
+                log.debug("Scheduled cleanup completed: no expired Geofence deployments found (grace period: {})",
+                        gracePeriod);
             }
 
         } catch (Exception e) {
@@ -66,13 +65,22 @@ public class GeofenceExpirationCleanupService {
     }
 
     /**
-     * Get the current grace period in hours.
-     * This method is provided for backward compatibility with the REST API.
-     * 
-     * @return The grace period in hours
+     * Get the configured grace period added after TIM end time when setting expiresAt.
+     *
+     * @return The grace period duration
+     */
+    public Duration getGracePeriod() {
+        Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
+        return gracePeriod != null ? gracePeriod : Duration.ofHours(2);
+    }
+
+    /**
+     * Get the current grace period in hours (truncated).
+     * Prefer {@link #getGracePeriod()} for sub-hour values.
+     *
+     * @return The grace period in whole hours
      */
     public int getGracePeriodHours() {
-        Duration gracePeriod = geofenceProperties.getExpiration().getGracePeriod();
-        return gracePeriod != null ? (int) gracePeriod.toHours() : 2;
+        return (int) getGracePeriod().toHours();
     }
 }

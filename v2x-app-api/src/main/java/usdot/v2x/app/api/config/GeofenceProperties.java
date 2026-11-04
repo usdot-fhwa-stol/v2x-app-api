@@ -31,7 +31,11 @@ public class GeofenceProperties {
     @Data
     public static class Expiration {
         private Cleanup cleanup = new Cleanup();
-        private Duration gracePeriod;
+        /**
+         * Grace period added after TIM end time when setting geofence expiresAt.
+         * Supports Spring Boot duration format (e.g., "5m", "2h") or ISO-8601.
+         */
+        private Duration gracePeriod = Duration.ofHours(2);
 
         @Data
         public static class Cleanup {
