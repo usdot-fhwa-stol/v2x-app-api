@@ -56,8 +56,13 @@ tim:
 geofence:
   geohash:
     precision: ${GEOFENCE_GEOHASH_PRECISION:7}
+    polygon-analysis-parallelism: ${GEOFENCE_GEOHASH_POLYGON_ANALYSIS_PARALLELISM:4}
   limits:
     max-geohashes: ${GEOFENCE_LIMITS_MAX_GEOHASHES:500}
+    max-candidate-cells: ${GEOFENCE_LIMITS_MAX_CANDIDATE_CELLS:100000}
+    min-geohashes: ${GEOFENCE_LIMITS_MIN_GEOHASHES:4}
+    allow-overlapping-geohashes: ${GEOFENCE_LIMITS_ALLOW_OVERLAPPING_GEOHASHES:true}
+    representative-filter-threshold: ${GEOFENCE_LIMITS_REPRESENTATIVE_FILTER_THRESHOLD:20}
   expiration:
     cleanup:
       enabled: ${GEOFENCE_EXPIRATION_CLEANUP_ENABLED:true}
