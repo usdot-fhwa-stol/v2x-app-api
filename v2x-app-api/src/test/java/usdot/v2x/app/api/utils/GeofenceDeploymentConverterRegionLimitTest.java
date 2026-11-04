@@ -92,7 +92,8 @@ class GeofenceDeploymentConverterRegionLimitTest {
                 null,
                 messageTypeService,
                 timCoordinateConverter,
-                null);
+                null,
+                properties);
     }
 
     @Test
