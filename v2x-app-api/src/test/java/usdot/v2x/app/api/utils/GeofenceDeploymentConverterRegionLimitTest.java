@@ -108,4 +108,17 @@ class GeofenceDeploymentConverterRegionLimitTest {
         assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, exception.getStatusCode());
         assertEquals("GEOFENCE_TOO_LARGE", exception.getErrorResponse().getError());
     }
+
+    @Test
+    void oversizedTimDerivedRegionIsRejectedByPreviewWithAndWithoutConflictChecks() {
+        DepositRequest request = new DepositRequest();
+        request.setAsn1Hex("001F00");
+
+        for (boolean checkConflicts : new boolean[] { false, true }) {
+            GeofenceTooLargeException exception = assertThrows(GeofenceTooLargeException.class,
+                    () -> converter.previewGeohashes(request, checkConflicts));
+
+            assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, exception.getStatusCode());
+        }
+    }
 }

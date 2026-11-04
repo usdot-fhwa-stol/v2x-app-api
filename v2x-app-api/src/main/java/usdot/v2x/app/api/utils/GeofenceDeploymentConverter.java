@@ -7,6 +7,7 @@ import usdot.v2x.app.api.models.etx.ErrorResponseException;
 import usdot.v2x.app.api.models.etx.configuration.DepositRequest;
 import usdot.v2x.app.api.models.etx.configuration.geofence.GeofenceFeatureCollection;
 import usdot.v2x.app.api.models.geofence.GeofenceDeploymentRequest;
+import usdot.v2x.app.api.models.geofence.GeohashPreviewResponse;
 import j2735ffm.MessageFrameCodec;
 import lombok.extern.slf4j.Slf4j;
 
@@ -148,43 +149,77 @@ public class GeofenceDeploymentConverter {
             // Continue without setting expiration time
         }
 
-        // Handle geofence data
-        GeofenceFeatureCollection geofence = configRequest.getOverrideGeofence();
-        if (geofence != null) {
-            // Use the override geofence directly
-            geofenceRequest.setGeojson(geofence);
-
-            try {
-                List<String> geohashes = geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence,
-                        geofenceId);
-                geofenceRequest.setGeohashes(geohashes);
-            } catch (NoAvailableGeohashException ex) {
-                throw new ErrorResponseException(
-                        new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
-                        HttpStatus.CONFLICT);
-            } catch (RuntimeException ex) {
-                throw ex;
-            }
-        } else {
-            // Extract geofence from the ASN.1 message if no override is provided
-            log.debug("No override geofence provided, extracting geofence from ASN.1 message");
-            geofence = extractGeofenceFromMessage(messageFrame);
-            geofenceRequest.setGeojson(geofence);
-
-            try {
-                List<String> geohashes = geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence,
-                        geofenceId);
-                geofenceRequest.setGeohashes(geohashes);
-            } catch (NoAvailableGeohashException ex) {
-                throw new ErrorResponseException(
-                        new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
-                        HttpStatus.CONFLICT);
-            } catch (RuntimeException ex) {
-                throw ex;
-            }
+        try {
+            GeohashSelection selection = resolveAndSelectGeohashes(
+                    configRequest.getOverrideGeofence(), messageFrame, geofenceId, true);
+            geofenceRequest.setGeojson(selection.geofence());
+            geofenceRequest.setGeohashes(selection.geohashes());
+        } catch (NoAvailableGeohashException ex) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
+                    HttpStatus.CONFLICT);
         }
 
         return geofenceRequest;
+    }
+
+    /**
+     * Compute the geofence and geohashes that would be selected for a deposit
+     * request without persisting anything.
+     *
+     * @param checkConflicts when {@code true}, avoids geohashes already claimed by
+     *                       active deployments (requires a DB round-trip); when
+     *                       {@code false} (default), returns the raw selection
+     *                       without querying active state — faster and suitable for
+     *                       planning purposes.
+     */
+    public GeohashPreviewResponse previewGeohashes(DepositRequest request, boolean checkConflicts) {
+        MessageFrame<?> messageFrame;
+        try {
+            messageFrame = parseMessageFrame(request.getAsn1Hex());
+        } catch (JsonProcessingException e) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("Failed to parse ASN.1 message", e.getMessage()),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        String geofenceId = messageFrame == null
+                ? generateFallbackGeofenceId(request.getAsn1Hex())
+                : generateGeofenceIdByMessageType(messageFrame, request.getAsn1Hex());
+
+        try {
+            GeohashSelection selection = resolveAndSelectGeohashes(
+                    request.getOverrideGeofence(), messageFrame, geofenceId, checkConflicts);
+            return GeohashPreviewResponse.builder()
+                    .geofenceId(geofenceId)
+                    .geofence(selection.geofence())
+                    .geohashes(selection.geohashes())
+                    .geohashCount(selection.geohashes().size())
+                    .build();
+        } catch (NoAvailableGeohashException ex) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("NO_AVAILABLE_GEOHASH", ex.getMessage()),
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    private GeohashSelection resolveAndSelectGeohashes(GeofenceFeatureCollection override,
+            MessageFrame<?> messageFrame, String geofenceId, boolean checkConflicts) {
+        GeofenceFeatureCollection geofence = override != null ? override : extractGeofenceFromMessage(messageFrame);
+        return selectGeohashes(geofence, geofenceId, checkConflicts, true);
+    }
+
+    private GeohashSelection selectGeohashes(GeofenceFeatureCollection geofence,
+            String geofenceId, boolean checkConflicts, boolean filterRepresentatives) {
+        List<String> geohashes = checkConflicts
+                ? geohashUtils.extractGeohashesFromGeofenceFeatureCollection(
+                        geofence, geofenceId, filterRepresentatives)
+                : geohashUtils.extractGeohashesFromGeofenceFeatureCollection(geofence,
+                        geofenceProperties.getGeohash().getPrecision(), java.util.Set.of(), filterRepresentatives);
+        return new GeohashSelection(geofence, geohashes);
+    }
+
+    private record GeohashSelection(GeofenceFeatureCollection geofence, List<String> geohashes) {
     }
 
     /**
@@ -308,6 +343,11 @@ public class GeofenceDeploymentConverter {
      * @return GeofenceFeatureCollection extracted from the message
      */
     private GeofenceFeatureCollection extractGeofenceFromMessage(MessageFrame<?> messageFrame) {
+        if (messageFrame == null) {
+            throw new ErrorResponseException(
+                    new ErrorResponse("Failed to detect message type", "ASN.1 parsing returned null frame"),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
         if (messageFrame instanceof TravelerInformationMessageFrame) {
             return extractGeofenceFromTim((TravelerInformationMessageFrame) messageFrame);
         } else if (messageFrame instanceof MapDataMessageFrame) {
