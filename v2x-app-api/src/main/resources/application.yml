@@ -147,6 +147,14 @@ secret:
   mapbox-access-token: ${MAPBOX_ACCESS_TOKEN:mapbox_access_token}
   noaa-geomag-api-token: ${NOAA_GEOMAG_API_TOKEN:noaa-geomag-api-token}
 
+# Encryption for MQTT/REST provider credentials stored in the database.
+# encryption-key: base64-encoded 32-byte AES key (generate with: openssl rand -base64 32).
+# When blank, the application starts but provider credential endpoints return 503.
+provider:
+  credentials:
+    encryption-key: ${PROVIDER_CREDENTIALS_ENCRYPTION_KEY:}
+    key-version: ${PROVIDER_CREDENTIALS_KEY_VERSION:1}
+
 # Spring Boot Actuator Configuration for Request Monitoring
 management:
   endpoints:
