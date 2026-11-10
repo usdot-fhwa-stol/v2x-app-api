@@ -93,7 +93,8 @@ class GeofenceDeploymentConverterRegionLimitTest {
                 messageTypeService,
                 timCoordinateConverter,
                 null,
-                properties);
+                properties,
+                new OverrideGeofenceResolver(geohashUtils, properties));
     }
 
     @Test
