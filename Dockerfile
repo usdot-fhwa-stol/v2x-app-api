@@ -24,6 +24,10 @@ COPY ./j2735-ffm-java/j2735-2024-ffm-lib/build.gradle /home/app/j2735-ffm-java/j
 # Copy V2X App API files
 COPY ./v2x-app-api/build.gradle ./v2x-app-api/settings.gradle ./v2x-app-api/
 
+# Download dependencies in their own layer so source-only changes reuse the
+# cached layer instead of re-fetching from remote repositories (e.g. repo.osgeo.org)
+RUN cd v2x-app-api && gradle resolveDependencies --no-daemon
+
 # Copy source code
 COPY ./v2x-app-api/src ./v2x-app-api/src
 
