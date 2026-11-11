@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import usdot.v2x.app.api.models.dto.provider.GeohashTopicSpec;
 
@@ -18,6 +19,9 @@ import usdot.v2x.app.api.models.dto.provider.GeohashTopicSpec;
  * topic per alternative</li>
  * <li>{@code +} / {@code *} - single-level wildcards ({@code *} is the ETX form)</li>
  * <li>{@code #} - multi-level wildcard, last level only</li>
+ * <li>{@code {name}} - a whole level replaced server-side by a per-provider
+ * topic variable (for example {@code {agency}} becomes {@code DDOT}) before
+ * the rules are returned to the app; see {@link TopicTemplateResolver}</li>
  * </ul>
  * Publish templates may not contain wildcards. All methods throw
  * {@link IllegalArgumentException}, which the global exception handler maps to
@@ -35,8 +39,12 @@ public final class TopicTemplateValidator {
     private static final String MULTI_LEVEL_WILDCARD = "#";
     private static final Set<String> WILDCARDS = Set.of(SINGLE_LEVEL_WILDCARD, ETX_SINGLE_LEVEL_WILDCARD,
             MULTI_LEVEL_WILDCARD);
+    private static final String PLACEHOLDER_OPEN = "{";
+    private static final String PLACEHOLDER_CLOSE = "}";
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z][A-Za-z0-9_]*)}");
     private static final Set<String> RESERVED_SYMBOLS = Set.of(LEVEL_SEPARATOR, ALTERNATIVE_SEPARATOR,
-            SINGLE_LEVEL_WILDCARD, ETX_SINGLE_LEVEL_WILDCARD, MULTI_LEVEL_WILDCARD);
+            SINGLE_LEVEL_WILDCARD, ETX_SINGLE_LEVEL_WILDCARD, MULTI_LEVEL_WILDCARD, PLACEHOLDER_OPEN,
+            PLACEHOLDER_CLOSE);
 
     private TopicTemplateValidator() {
     }
@@ -86,7 +94,7 @@ public final class TopicTemplateValidator {
         }
         String symbol = spec.getSymbol();
         if (symbol == null || symbol.isBlank() || RESERVED_SYMBOLS.stream().anyMatch(symbol::contains)) {
-            throw new IllegalArgumentException("geohash symbol must be non-blank and must not contain / | + * #");
+            throw new IllegalArgumentException("geohash symbol must be non-blank and must not contain / | + * # { }");
         }
         Integer levels = spec.getLevels();
         if (levels == null || levels < 1 || levels > MAX_LEVELS) {
@@ -172,6 +180,13 @@ public final class TopicTemplateValidator {
                 geohashLevels++;
                 continue;
             }
+            if (isPlaceholder(level)) {
+                continue;
+            }
+            if (level.contains(PLACEHOLDER_OPEN) || level.contains(PLACEHOLDER_CLOSE)) {
+                errors.add(prefix + "placeholders must be written as {name} and occupy a whole level");
+                continue;
+            }
             if (level.contains(symbol)) {
                 errors.add(prefix + "'" + symbol + "' must occupy a whole level");
                 continue;
@@ -194,6 +209,36 @@ public final class TopicTemplateValidator {
         }
         if (geohashLevels > 1) {
             errors.add(prefix + "'" + symbol + "' may appear at most once");
+        }
+    }
+
+    /**
+     * @return true when the level is a whole-level topic variable such as {@code {agency}}
+     */
+    static boolean isPlaceholder(String level) {
+        return PLACEHOLDER.matcher(level).matches();
+    }
+
+    /**
+     * @return the variable name of a placeholder level, e.g. {@code agency} for {@code {agency}}
+     */
+    static String placeholderName(String level) {
+        return level.substring(1, level.length() - 1);
+    }
+
+    /**
+     * Validates a topic variable value: it must be usable as one literal topic
+     * level, so it may not contain separators, wildcards, alternatives, braces
+     * or the geohash symbol.
+     */
+    public static void validateVariableValue(String name, String value, GeohashTopicSpec spec) {
+        if (value == null || value.isBlank() || !value.equals(value.strip())) {
+            throw new IllegalArgumentException("topic variable '" + name + "' must be a non-blank value without surrounding whitespace");
+        }
+        if (RESERVED_SYMBOLS.stream().anyMatch(value::contains)
+                || (spec != null && spec.getSymbol() != null && value.contains(spec.getSymbol()))) {
+            throw new IllegalArgumentException("topic variable '" + name + "' value '" + value
+                    + "' must be a single literal topic level (no / | + * # { } or geohash symbol)");
         }
     }
 

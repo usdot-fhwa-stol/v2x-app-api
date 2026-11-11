@@ -21,14 +21,14 @@ class TopicTemplateValidatorTest {
     private static final List<String> NMI_SUBSCRIBE = List.of("v1/g32/@/31|19|18|41");
 
     private static final List<String> AV_PUBLISH = List.of(
-            "PSM/unsigned/J2735/DDOT/@",
-            "BSM/unsigned/J2735/DDOT/@");
+            "PSM/unsigned/J2735/{agency}/@",
+            "BSM/unsigned/J2735/{agency}/@");
     private static final List<String> AV_SUBSCRIBE = List.of(
-            "PSM/unsigned/J2735/DDOT/@",
-            "BSM/unsigned/J2735/DDOT/@",
-            "SDSM/unsigned/J2735/DDOT/@",
-            "SPAT/unsigned/J2735/DDOT/@",
-            "MAP/unsigned/J2735/DDOT/@",
+            "PSM/unsigned/J2735/{agency}/@",
+            "BSM/unsigned/J2735/{agency}/@",
+            "SDSM/unsigned/J2735/{agency}/@",
+            "SPAT/unsigned/J2735/{agency}/@",
+            "MAP/unsigned/J2735/{agency}/@",
             "TIM/unsigned/J2735/@");
 
     @Test
@@ -58,6 +58,8 @@ class TopicTemplateValidatorTest {
             "v1/g32/@/+",
             "TIM/unsigned/J2735/@",
             "BSM/unsigned/J2735/DDOT/@",
+            "BSM/unsigned/J2735/{agency}/@",
+            "{prefix}/g32/@/{agency_2}",
             "vzimp/1/GeoRelevance/*/*/Public/j2735_gr|j2735/BSM|TIM/*",
             "#"
     })
@@ -78,6 +80,12 @@ class TopicTemplateValidatorTest {
             "v1/g32/@/20/",
             "v1//g32/@/20",
             " v1/g32/@/20",
+            "BSM/unsigned/J2735/{agency/@",
+            "BSM/unsigned/J2735/agency}/@",
+            "BSM/unsigned/J2735/x{agency}/@",
+            "BSM/unsigned/J2735/{}/@",
+            "BSM/unsigned/J2735/{1agency}/@",
+            "BSM/unsigned/J2735/{agency}|DDOT/@",
             ""
     })
     void rejectsInvalidSubscribeTopics(String topic) {
@@ -154,6 +162,37 @@ class TopicTemplateValidatorTest {
     }
 
     @Test
+    void acceptsPlaceholderInPublishTopic() {
+        assertDoesNotThrow(() -> TopicTemplateValidator.validatePublishTopic("BSM/unsigned/J2735/{agency}/@",
+                DEFAULT_SPEC));
+    }
+
+    @Test
+    void placeholderLevelsCountOnce() {
+        assertEquals(9, TopicTemplateValidator.expandedSubscriptionCount(
+                List.of("TIM/unsigned/J2735/{agency}/@"), DEFAULT_SPEC));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "DDOT", "MDOT", "agency-1", "a_b" })
+    void acceptsLiteralVariableValues(String value) {
+        assertDoesNotThrow(() -> TopicTemplateValidator.validateVariableValue("agency", value, DEFAULT_SPEC));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "", " ", " DDOT", "DD/OT", "DDOT|MDOT", "+", "#", "*", "{x}", "D@T" })
+    void rejectsNonLiteralVariableValues(String value) {
+        assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateVariableValue("agency", value, DEFAULT_SPEC));
+    }
+
+    @Test
+    void rejectsNullVariableValue() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateVariableValue("agency", null, DEFAULT_SPEC));
+    }
+
+    @Test
     void rejectsInvalidSpecs() {
         assertThrows(IllegalArgumentException.class, () -> TopicTemplateValidator.validateSpec(null));
         assertThrows(IllegalArgumentException.class,
@@ -162,6 +201,8 @@ class TopicTemplateValidatorTest {
                 () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("+", 7, 7, 7, 1)));
         assertThrows(IllegalArgumentException.class,
                 () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("a/b", 7, 7, 7, 1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("{", 7, 7, 7, 1)));
         assertThrows(IllegalArgumentException.class,
                 () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("@", 0, 1, 1, 1)));
         assertThrows(IllegalArgumentException.class,

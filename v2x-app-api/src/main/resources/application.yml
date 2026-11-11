@@ -53,6 +53,13 @@ j2735.codec:
 tim:
   config.file.path: ${TIM_CONFIG_FILE_PATH:/tim_config_files/tim-config.json}
   icons.directory: ${TIM_ICONS_DIRECTORY:/tim_config_files/tim-icons}
+# Default values for {name} topic variables in MQTT provider ACL topic templates,
+# keyed by provider then variable. Values set through the v3 admin API take precedence.
+mqtt:
+  topic-variables:
+    av:
+      # Agency level in AV topics, e.g. MAP/unsigned/J2735/{agency}/@ -> MAP/unsigned/J2735/DDOT/@
+      agency: ${AV_TOPIC_AGENCY:DDOT}
 geofence:
   geohash:
     precision: ${GEOFENCE_GEOHASH_PRECISION:7}
