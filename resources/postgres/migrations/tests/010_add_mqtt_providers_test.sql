@@ -52,8 +52,9 @@ BEGIN
     FROM mqtt_provider_acl_subscribe_topics t
     JOIN mqtt_provider_acl_rules r ON r.id = t.rule_id
     WHERE r.name = 'av.mobile.default';
-    IF actual IS DISTINCT FROM 'PSM/unsigned/J2735/DDOT/@,BSM/unsigned/J2735/DDOT/@,SDSM/unsigned/J2735/DDOT/@,'
-            || 'SPAT/unsigned/J2735/DDOT/@,MAP/unsigned/J2735/DDOT/@,TIM/unsigned/J2735/@' THEN
+    IF actual IS DISTINCT FROM 'PSM/unsigned/J2735/{agency}/@,BSM/unsigned/J2735/{agency}/@,'
+            || 'SDSM/unsigned/J2735/{agency}/@,SPAT/unsigned/J2735/{agency}/@,'
+            || 'MAP/unsigned/J2735/{agency}/@,TIM/unsigned/J2735/@' THEN
         RAISE EXCEPTION 'AV subscribe topics are wrong: %', actual;
     END IF;
 
@@ -61,7 +62,7 @@ BEGIN
     FROM mqtt_provider_acl_publish_topics t
     JOIN mqtt_provider_acl_rules r ON r.id = t.rule_id
     WHERE r.name = 'av.mobile.default';
-    IF actual IS DISTINCT FROM 'PSM/unsigned/J2735/DDOT/@,BSM/unsigned/J2735/DDOT/@' THEN
+    IF actual IS DISTINCT FROM 'PSM/unsigned/J2735/{agency}/@,BSM/unsigned/J2735/{agency}/@' THEN
         RAISE EXCEPTION 'AV publish topics are wrong: %', actual;
     END IF;
 
@@ -85,6 +86,10 @@ BEGIN
             JOIN mqtt_providers p ON p.id = e.provider_id
             WHERE p.provider_key = 'av' AND e.name = 'tim' AND e.path = '/tims') THEN
         RAISE EXCEPTION 'AV TIM REST endpoint missing';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM mqtt_provider_topic_variables) THEN
+        RAISE EXCEPTION 'Topic variables must not be seeded (env defaults apply)';
     END IF;
 
     IF (SELECT message_id FROM j2735_message_ids WHERE code = 'SDSM') <> 41 THEN
@@ -200,6 +205,33 @@ BEGIN
 END;
 $$;
 
+-- Topic variable overrides accept literal levels and reject topic syntax.
+INSERT INTO mqtt_provider_topic_variables (provider_id, name, value)
+SELECT id, 'agency', 'MDOT' FROM mqtt_providers WHERE provider_key = 'av';
+DO $$
+DECLARE
+    bad TEXT;
+BEGIN
+    FOREACH bad IN ARRAY ARRAY['DD/OT', 'DDOT|MDOT', '+', '#', '*', '{x}', 'D@T', ' DDOT', ''] LOOP
+        BEGIN
+            INSERT INTO mqtt_provider_topic_variables (provider_id, name, value)
+            SELECT id, 'bad', bad FROM mqtt_providers WHERE provider_key = 'nmi';
+            RAISE EXCEPTION 'Invalid topic variable value % was accepted', quote_literal(bad);
+        EXCEPTION WHEN check_violation THEN
+            NULL;
+        END;
+    END LOOP;
+
+    BEGIN
+        INSERT INTO mqtt_provider_topic_variables (provider_id, name, value)
+        SELECT id, '1bad', 'x' FROM mqtt_providers WHERE provider_key = 'nmi';
+        RAISE EXCEPTION 'Invalid topic variable name was accepted';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
+END;
+$$;
+
 -- Deleting a provider cascades to its children.
 DELETE FROM mqtt_providers WHERE provider_key = 'av';
 DO $$
@@ -209,6 +241,9 @@ BEGIN
     END IF;
     IF (SELECT COUNT(*) FROM mqtt_provider_acl_subscribe_topics) <> 1 THEN
         RAISE EXCEPTION 'AV topics survived provider delete';
+    END IF;
+    IF EXISTS (SELECT 1 FROM mqtt_provider_topic_variables) THEN
+        RAISE EXCEPTION 'AV topic variables survived provider delete';
     END IF;
 END;
 $$;

@@ -554,6 +554,23 @@ CREATE TABLE IF NOT EXISTS mqtt_provider_acl_subscribe_topics (
     CONSTRAINT chk_mqtt_provider_acl_subscribe_topics_topic CHECK (LENGTH(TRIM(topic)) > 0)
 );
 
+-- Per-provider values for {name} topic variables in the templates above (for
+-- example av / agency / DDOT). Rows here override the API's env/yml defaults
+-- (mqtt.topic-variables.*, e.g. AV_TOPIC_AGENCY); none are seeded.
+CREATE TABLE IF NOT EXISTS mqtt_provider_topic_variables (
+    provider_id BIGINT NOT NULL,
+    name VARCHAR(64) NOT NULL,
+    value VARCHAR(255) NOT NULL,
+    PRIMARY KEY (provider_id, name),
+    CONSTRAINT fk_mqtt_provider_topic_variables_provider_id FOREIGN KEY (provider_id)
+        REFERENCES mqtt_providers(id) ON DELETE CASCADE,
+    CONSTRAINT chk_mqtt_provider_topic_variables_name CHECK (name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
+    -- one literal topic level: no separators, wildcards, alternatives or braces
+    CONSTRAINT chk_mqtt_provider_topic_variables_value CHECK (
+        LENGTH(TRIM(value)) > 0 AND value = TRIM(value) AND value !~ '[/+#*|{}@]'
+    )
+);
+
 -- 3) Credentials (one shared set per provider) --------------------------------
 -- *_enc columns hold v{keyVersion}:base64(iv || ciphertext || tag)
 CREATE TABLE IF NOT EXISTS mqtt_provider_credentials (
@@ -635,7 +652,8 @@ BEGIN
             (v_rule_id, 0, 'v1/g32/@/31|19|18|41');
     END IF;
 
-    -- AV: {MSG}/unsigned/J2735/DDOT/{geohash}; TIM has no DDOT level. Six
+    -- AV: {MSG}/unsigned/J2735/{agency}/{geohash}; TIM has no agency level.
+    -- {agency} is resolved by the API (AV_TOPIC_AGENCY, default DDOT). Six
     -- subscribe topics over a 3x3 grid = 54 subscriptions. Seeded disabled until
     -- an admin sets the REST base URL and credentials.
     v_provider_id := NULL;
@@ -658,14 +676,14 @@ BEGIN
         RETURNING id INTO v_rule_id;
 
         INSERT INTO mqtt_provider_acl_publish_topics (rule_id, topic_order, topic) VALUES
-            (v_rule_id, 0, 'PSM/unsigned/J2735/DDOT/@'),
-            (v_rule_id, 1, 'BSM/unsigned/J2735/DDOT/@');
+            (v_rule_id, 0, 'PSM/unsigned/J2735/{agency}/@'),
+            (v_rule_id, 1, 'BSM/unsigned/J2735/{agency}/@');
         INSERT INTO mqtt_provider_acl_subscribe_topics (rule_id, topic_order, topic) VALUES
-            (v_rule_id, 0, 'PSM/unsigned/J2735/DDOT/@'),
-            (v_rule_id, 1, 'BSM/unsigned/J2735/DDOT/@'),
-            (v_rule_id, 2, 'SDSM/unsigned/J2735/DDOT/@'),
-            (v_rule_id, 3, 'SPAT/unsigned/J2735/DDOT/@'),
-            (v_rule_id, 4, 'MAP/unsigned/J2735/DDOT/@'),
+            (v_rule_id, 0, 'PSM/unsigned/J2735/{agency}/@'),
+            (v_rule_id, 1, 'BSM/unsigned/J2735/{agency}/@'),
+            (v_rule_id, 2, 'SDSM/unsigned/J2735/{agency}/@'),
+            (v_rule_id, 3, 'SPAT/unsigned/J2735/{agency}/@'),
+            (v_rule_id, 4, 'MAP/unsigned/J2735/{agency}/@'),
             (v_rule_id, 5, 'TIM/unsigned/J2735/@');
     END IF;
 END;

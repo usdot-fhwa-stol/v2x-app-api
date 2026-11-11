@@ -211,6 +211,14 @@ the `/prd/v3/providers` endpoints:
   token: levels, publish and subscribe precision, and subscribe grid radius
   (1 = 3×3 grid). It also has optional role scoping. Topics are kept in order in
   `mqtt_provider_acl_publish_topics` and `mqtt_provider_acl_subscribe_topics`.
+- `mqtt_provider_topic_variables`: per-provider values for `{name}` topic
+  placeholders, such as `av` / `agency` / `DDOT`. The API substitutes each
+  placeholder before returning the rules, so the app never sees `{agency}`.
+  - A value here overrides the API's env/yml default
+    (`mqtt.topic-variables.<provider>.<name>`, for example `AV_TOPIC_AGENCY`,
+    which defaults to `DDOT`).
+  - Each value must be a single literal topic level (it is checked).
+  - No values are seeded, so the env default applies until an admin sets one.
 - `mqtt_provider_credentials`: one shared credential set per provider. Secret
   columns (`*_enc`) hold AES-256-GCM ciphertext written by the API. They are
   never seeded.
@@ -226,7 +234,7 @@ Seeds:
 | --- | --- | --- | --- |
 | `etx` | yes | `ETX_CONNECTION` | none (rules come from ETX) |
 | `nmi` | yes | `tcp://mqtt.us.mobilityinterchange.com:1883`, anonymous | `nmi.mobile.default`: publish `v1/g32/@/20\|32`, subscribe `v1/g32/@/31\|19\|18\|41`, limit 36 |
-| `av` | **no** | `tcp://v2x.aitoms.net:1883`, username/password | `av.mobile.default`: publish PSM and BSM, subscribe PSM, BSM, SDSM, SPAT, MAP and TIM, limit 54 |
+| `av` | **no** | `tcp://v2x.aitoms.net:1883`, username/password | `av.mobile.default`: publish PSM and BSM, subscribe PSM, BSM, SDSM, SPAT and MAP (`{MSG}/unsigned/J2735/{agency}/@`) and `TIM/unsigned/J2735/@`, limit 54 |
 
 AV stays disabled until an admin sets its REST base URL and credentials and
 then enables it.
@@ -249,6 +257,7 @@ applies the migration twice and checks:
 - the seeds;
 - that a re-run keeps admin edits and deletions;
 - that the `updated_at` trigger fires;
+- that topic-variable values must be literal levels;
 - the check, unique and cascade constraints.
 
 Migration 010 creates real tables, so run the test against a throwaway
