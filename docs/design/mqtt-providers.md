@@ -161,11 +161,8 @@ These are open to `USER`, `DEPOSITOR` and `ADMIN`.
 
 <details>
 <summary>Example: <code>GET /prd/v3/providers</code></summary>
-
-Null fields are left out. `credentialsPath` appears only when MQTT credentials exist for the caller's role. `rest.endpoints` lists only the proxy endpoints the caller may use. The `tim` endpoint is illustrative: the real endpoints will come from AV's OpenAPI spec.
-
-```json
-[
+<p>Null fields are left out. <code>credentialsPath</code> appears only when MQTT credentials exist for the caller's role. <code>rest.endpoints</code> lists only the proxy endpoints the caller may use. The <code>tim</code> endpoint is illustrative: the real endpoints will come from AV's OpenAPI spec.</p>
+<pre><code class="language-json">[
     {
         "key": "etx",
         "type": "ETX",
@@ -202,15 +199,12 @@ Null fields are left out. `credentialsPath` appears only when MQTT credentials e
         "aclRulesPath": "/prd/v3/providers/av/acl-rules",
         "credentialsPath": "/prd/v3/providers/av/credentials"
     }
-]
-```
+]</code></pre>
 </details>
 
 <details>
 <summary>Example: <code>GET /prd/v3/providers/nmi/acl-rules</code></summary>
-
-```json
-[
+<pre><code class="language-json">[
     {
         "name": "nmi.mobile.default",
         "subscribeLimit": 36,
@@ -223,15 +217,12 @@ Null fields are left out. `credentialsPath` appears only when MQTT credentials e
             "v1/g32/@/31|19|18|41"
         ]
     }
-]
-```
+]</code></pre>
 </details>
 
 <details>
 <summary>Example: <code>GET /prd/v3/providers/av/acl-rules</code></summary>
-
-```json
-[
+<pre><code class="language-json">[
     {
         "name": "av.mobile.default",
         "subscribeLimit": 99,
@@ -250,23 +241,18 @@ Null fields are left out. `credentialsPath` appears only when MQTT credentials e
             "TIM/unsigned/J2735/@"
         ]
     }
-]
-```
+]</code></pre>
 </details>
 
 <details>
 <summary>Example: <code>GET /prd/v3/providers/av/credentials</code></summary>
-
-`credentialRole` shows which role's credential set was selected. This response contains MQTT credentials only. REST credentials never leave the server.
-
-```json
-{
+<p><code>credentialRole</code> shows which role's credential set was selected. This response contains MQTT credentials only. REST credentials never leave the server.</p>
+<pre><code class="language-json">{
     "provider": "av",
     "credentialRole": "DEPOSITOR",
     "mqtt": { "username": "…", "password": "…" },
     "updatedAt": "2026-11-10T12:00:00Z"
-}
-```
+}</code></pre>
 </details>
 
 ### 5.3 Admin endpoints (`ADMIN` only)
