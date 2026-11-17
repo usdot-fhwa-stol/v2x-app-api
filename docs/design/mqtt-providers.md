@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Draft for peer review |
 | **Component** | v2x-app-api. Mobile app changes are tracked separately. |
-| **Review** | Comment inline. Decisions are listed in [section 11](#11-review-decisions) and open questions in [section 12](#12-open-questions). |
+| **Review** | Comment inline on the PR. |
 
 ## 1. Background
 
@@ -38,7 +38,7 @@ The mobile app works with two MQTT brokers today, and it learns about them in di
 3. Adding or changing a provider, a topic or an agency is a configuration change, not an app release.
 4. Credentials can differ by user role, in the same way ETX registration uses a different vendor ID for depositors.
 5. AV REST calls go through a v2x-app-api proxy, so REST secrets stay on the server.
-6. Credentials are encrypted at rest and are never exposed in admin views or logs.
+6. Credentials are encrypted at rest, masked in admin views unless an admin explicitly reveals them, and never written to logs.
 7. Every existing v2 endpoint keeps its current behavior.
 
 **Non-goals (phase 1)**
@@ -100,6 +100,7 @@ ACL topics use the existing **ETX ACL syntax**, so the app's current ACL handlin
 - A variable holds **one or more values**. When there are several, the API joins them with `|`, so the app expands them as ordinary ETX alternatives. For example, with agencies `DDOT` and `Raven`:
   - Template: `MAP/unsigned/J2735/{agency}/@`
   - Returned to the app: `MAP/unsigned/J2735/DDOT|Raven/@`
+  - The app subscribes to every listed agency and publishes each message under every listed agency.
 - **Where values come from:** an admin override in the database takes precedence over the deployment default (`AV_TOPIC_AGENCIES=DDOT,Raven`).
 - **Allowed values:** each value must be a literal topic level, with no separators, wildcards, `|`, braces or `@`. Values are case-sensitive and must match AV's topics exactly.
 - **Consistency is enforced on writes:**
@@ -279,7 +280,7 @@ These follow the conventions of the existing admin endpoints: POST upserts a rec
 | ACL rules | `/{key}/acl-rules[/{name}]` | List, upsert (validated), delete |
 | Topic variables | `/{key}/topic-variables[/{name}]` | List effective values, set a value list, revert to the default |
 | REST endpoints | `/{key}/rest-endpoints[/{name}]` | List, upsert, delete the proxy allowlist |
-| Credentials | `/{key}/credentials[/{role}]` | Masked view; write-only set/rotate and delete, per role |
+| Credentials | `/{key}/credentials[/{role}]` | Masked list; read plaintext for one role (`/{key}/credentials/{role}?reveal=true`); set/rotate and delete, per role |
 
 ## 6. REST proxy
 
@@ -331,8 +332,17 @@ v2x-app-api already sits between the app and Thingspace. The AV proxy follows th
 
 - **Encrypted at rest** with AES-256-GCM, using a random IV per value and a key version prefix. The key comes from the environment (`PROVIDER_CREDENTIALS_ENCRYPTION_KEY`) and is never committed.
 - **If the key is missing or wrong,** the application still starts. The credential and proxy features return 503, and the rest of the API is unaffected.
-- **Key rotation** is manual in phase 1: change the key, bump the version, redeploy, and re-enter the credentials.
-- **Admins see masked values only**, and the credential write endpoint is write-only.
+- **Key rotation** is a manual procedure in phase 1, used when the key may have been exposed, someone with access to it leaves, or policy requires it:
+  1. Read the current credentials through the admin API.
+  2. Change the key and bump the version, then redeploy.
+  3. Re-enter the credentials.
+
+  The version prefix shows which stored values were encrypted under an old key.
+- **Admins can read secrets.**
+  - By default, admin views mask values.
+  - An admin can request one role's credentials in plaintext with `?reveal=true`.
+  - Reveal responses are sent with `no-store`.
+  - Each reveal is audit-logged with the admin, provider, role and time, but never the value.
 - **Only MQTT credentials ever reach devices.** They are served over HTTPS from a dedicated endpoint with `no-store`. REST credentials never leave the server.
 - **No secrets in logs.**
   - The existing error logging saves the bodies of failed POST/PUT requests to the database. Admin credential requests must be excluded from this, and a test must cover it.
@@ -388,7 +398,9 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
   - Encryption, including round trip, tamper detection and wrong or missing key.
   - Credential selection by role.
   - Proxy behavior: allowlist, method and role checks, header handling, upstream auth, and error mapping, tested against a mock upstream.
-  - Masking of credentials in admin views, and keeping them out of the error log.
+  - Credentials are masked by default in admin views.
+  - The admin-only reveal returns plaintext and writes an audit log entry.
+  - Credentials are kept out of the error log.
   - v2 and v3 ETX parity.
 - **Migration test:** idempotency and constraints, in the style of the existing migration tests.
 - **Local integration testing:**
@@ -398,24 +410,7 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
   - Broker smoke tests.
   - Results are recorded on the ticket.
 
-## 11. Review decisions
-
-| # | Decision |
-|---|---|
-| D1 | Credentials can differ by role (`USER`, `DEPOSITOR`, `ADMIN`), selected in the order `ADMIN → DEPOSITOR → USER`. There is no separate default set. |
-| D2 | v2x-app-api proxies the AV REST API. The app receives MQTT credentials only. |
-| D3 | Only the NMI production host appears in the provider list. |
-| D4 | Key rotation is manual in phase 1. |
-| D5 | AV topic split confirmed: the app publishes PSM and BSM, and subscribes to PSM, BSM, SDSM, SPAT, MAP and TIM. |
-| D6 | AV REST endpoints and auth will be configured from the OpenAPI spec AV provides. |
-| D7 | No proxy rate limiting or caching in phase 1. |
-| D8 | `{agency}` supports a list of agencies. The initial agencies are `DDOT` and `Raven`. |
-
-## 12. Open questions
-
-1. **Publishing when there are several agencies.** With the template `PSM/unsigned/J2735/DDOT|Raven/@`, should the app publish each message under **every** listed agency (the draft assumption) or under only one? If only one, which one: for example, selected by region, or a per-agency publish list?
-
-## 13. Alternatives considered
+## 11. Alternatives considered
 
 | Alternative | Reason not chosen |
 |---|---|
@@ -426,7 +421,7 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
 | One agency per deployment | Doesn't support DDOT and Raven together. Multi-value variables reuse the existing `\|` expansion. |
 | Structured topic fields instead of templates | Would need a new parser in the app. Templates reuse the existing ACL handling. |
 
-## 14. Implementation plan
+## 12. Implementation plan
 
 Implementation starts after this design is approved. It is delivered as a series of small PRs, each with its own tests and docs, and none of them changes v2 behavior:
 
