@@ -29,9 +29,7 @@ The mobile app works with two MQTT brokers today, and it learns about them in di
 | Payload | Geo-routed proto, unsigned UPER | IEEE 1609.2 signed UPER | Unsigned UPER |
 | REST API | Proxied by v2x-app-api (Thingspace) | None | TIM REST API, to be **proxied by v2x-app-api** |
 
-## 2. Goals and non-goals
-
-**Goals**
+## 2. Goals
 
 1. v2x-app-api becomes the single runtime source of the app's MQTT providers: how to connect, which topics are allowed, and which MQTT credentials to use.
 2. AV is added. NMI's hardcoded settings move to the API, and ETX is described as a provider.
@@ -40,17 +38,6 @@ The mobile app works with two MQTT brokers today, and it learns about them in di
 5. AV REST calls go through a v2x-app-api proxy, so REST secrets stay on the server.
 6. Credentials are encrypted at rest, masked in admin views unless an admin explicitly reveals them, and never written to logs.
 7. Every existing v2 endpoint keeps its current behavior.
-
-**Non-goals (phase 1)**
-
-- Mobile app changes.
-- Obtaining credentials from AV.
-- Deprecating any v2 endpoint.
-- Proxying MQTT traffic.
-- Per-user credentials.
-- Rate limiting or caching in the REST proxy.
-- Automated key rotation.
-- Non-production broker entries.
 
 ## 3. Overview
 
@@ -102,15 +89,15 @@ ACL topics use the existing **ETX ACL syntax**, so the app's current ACL handlin
   - Publish templates use `{publishAgency}`.
   - Subscribe templates use `{subscribeAgency}`.
 
-  This lets the app, for example, receive from both agencies while publishing to only one.
+  By default the app publishes only to DDOT and subscribes to both DDOT and Raven.
 
 | | Publish agencies | Subscribe agencies |
 |---|---|---|
 | Variable | `{publishAgency}` | `{subscribeAgency}` |
-| Environment default | `AV_PUBLISH_AGENCIES=DDOT,Raven` | `AV_SUBSCRIBE_AGENCIES=DDOT,Raven` |
-| Admin override | `PUT /prd/v3/admin/providers/av/topic-variables/publishAgency` with `["DDOT"]` | `PUT /prd/v3/admin/providers/av/topic-variables/subscribeAgency` with `["DDOT", "Raven"]` |
+| Environment default | `AV_PUBLISH_AGENCIES=DDOT` | `AV_SUBSCRIBE_AGENCIES=DDOT,Raven` |
+| Admin override (body is a list of agencies, e.g. `["DDOT", "Raven"]`) | `PUT /prd/v3/admin/providers/av/topic-variables/publishAgency` | `PUT /prd/v3/admin/providers/av/topic-variables/subscribeAgency` |
 | Example template | `PSM/unsigned/J2735/{publishAgency}/@` | `MAP/unsigned/J2735/{subscribeAgency}/@` |
-| Returned to the app (with the overrides above) | `PSM/unsigned/J2735/DDOT/@` | `MAP/unsigned/J2735/DDOT\|Raven/@` |
+| Returned to the app (defaults) | `PSM/unsigned/J2735/DDOT/@` | `MAP/unsigned/J2735/DDOT\|Raven/@` |
 
 - **Where values come from:**
   - An admin override set through the API takes effect immediately, with no redeploy.
@@ -254,8 +241,8 @@ Null fields are left out. `credentialsPath` appears only when MQTT credentials e
         "publishRateLimit": 10,
         "geohash": { "symbol": "@", "levels": 7, "publishPrecision": 7, "subscribePrecision": 7, "subscribeGridRadius": 1 },
         "publish": [
-            "PSM/unsigned/J2735/DDOT|Raven/@",
-            "BSM/unsigned/J2735/DDOT|Raven/@"
+            "PSM/unsigned/J2735/DDOT/@",
+            "BSM/unsigned/J2735/DDOT/@"
         ],
         "subscribe": [
             "PSM/unsigned/J2735/DDOT|Raven/@",
