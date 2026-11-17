@@ -2,692 +2,358 @@
 
 | | |
 |---|---|
-| **Status** | Draft, open for peer review (revision 2, includes the first round of review decisions) |
-| **Component** | v2x-app-api |
-| **Scope** | API only. Mobile app changes are tracked separately. |
-| **Reviewers** | Please comment inline on the PR. Decisions so far are in [section 14](#14-review-decisions) and the remaining questions are in [section 15](#15-open-questions). |
+| **Status** | Draft for peer review |
+| **Component** | v2x-app-api. Mobile app changes are tracked separately. |
+| **Review** | Comment inline. Decisions are listed in [section 11](#11-review-decisions) and open questions in [section 12](#12-open-questions). |
 
 ## 1. Background
 
-Today the mobile app connects to one MQTT broker, ETX/Thingspace:
+The mobile app works with two MQTT brokers today, and it learns about them in different ways:
 
-- The broker URL comes from `POST /prd/v2/connection` (`ConnectionResponse.MqttURL`).
-- Topic permissions come from `GET /prd/v2/acl-rules`. This proxies ETX `/api/v1/device-roles/vendor` and can be narrowed by `AclRulesFilter`.
-- Everything else (topic grammar, payload formats, message types) is hardcoded, either in the app or in `AclRulesFilter` constants.
+- **ETX/Thingspace** is configured through v2x-app-api:
+  - `POST /prd/v2/connection` returns the broker URL.
+  - `GET /prd/v2/acl-rules` returns the topic permissions.
+- **NMI** (National Mobility Interchange) is **hardcoded in the app**: host, port, topic layout and payload format. Changing any of these requires a new app build.
 
-Two more brokers need to be supported:
+**AV** is a new broker that must be added. It differs from the other two:
 
-| | **AV** (primary target) | **NMI** (National Mobility Interchange) |
-|---|---|---|
-| MQTT auth | Username and password | Anonymous |
-| Endpoint | `v2x.aitoms.net`, `tcp:1883` | `mqtt.us.mobilityinterchange.com`, `tcp:1883` (production only) |
-| Topic layout | `{MSG}/unsigned/J2735/{agency}/{geohash path}`, except TIM, which is `TIM/unsigned/J2735/{geohash path}` | `v1/g32/{geohash path}/{messageId}` |
-| Geohash path | One character per topic level, precision 7 | One character per topic level, precision 7 |
-| Payload | Unsigned UPER | IEEE 1609.2 signed UPER |
-| REST API | TIM REST API with credentials, **proxied by v2x-app-api** | None |
+- MQTT connections need a username and password.
+- The app needs TIM data from AV's REST API, which requires credentials that must not be placed on devices.
+- Topics include an agency level. There is more than one agency (`DDOT`, `Raven`), and the list must be changeable without an app release.
 
-- AV requires MQTT credentials, which can't be compiled into the app and must be delivered at runtime.
-- AV's REST credentials must **never reach devices**. v2x-app-api calls the AV REST API for the app instead.
-- AV topics contain an agency level (for example `DDOT`) that must be changeable without an app release.
+| | ETX | NMI (existing, hardcoded) | AV (new) |
+|---|---|---|---|
+| Connection | From `POST /prd/v2/connection` | `mqtt.us.mobilityinterchange.com`, `tcp:1883` | `v2x.aitoms.net`, `tcp:1883` |
+| MQTT auth | ETX certificate | Anonymous | Username and password |
+| Topics | ETX ACL rules | `v1/g32/{geohash path}/{messageId}` | `{MSG}/unsigned/J2735/{agency}/{geohash path}`, and `TIM/unsigned/J2735/{geohash path}` for TIM |
+| Payload | Geo-routed proto, unsigned UPER | IEEE 1609.2 signed UPER | Unsigned UPER |
+| REST API | Proxied by v2x-app-api (Thingspace) | None | TIM REST API, to be **proxied by v2x-app-api** |
 
 ## 2. Goals and non-goals
 
 **Goals**
 
-1. Make v2x-app-api the runtime source of truth for the MQTT providers the app should use:
-   - how to connect to each one
-   - which topics the app may publish and subscribe to
-   - which MQTT credentials it uses
-2. Fully support AV, and describe ETX and NMI as providers too.
-3. Make adding or changing a provider a configuration change, not an app release.
-4. Let provider-specific topic values, such as the AV agency, be configured without code changes.
-5. Support **different credentials for different user roles**, in the same way ETX registration gives depositor users a different vendor ID.
-6. Keep REST API secrets on the server. The app reaches provider REST APIs only through a v2x-app-api proxy.
-7. Encrypt credentials at rest, and never show them in admin views or logs.
-8. Keep every existing v2 endpoint behaving exactly as it does today.
+1. v2x-app-api becomes the single runtime source of the app's MQTT providers: how to connect, which topics are allowed, and which MQTT credentials to use.
+2. AV is added. NMI's hardcoded settings move to the API, and ETX is described as a provider.
+3. Adding or changing a provider, a topic or an agency is a configuration change, not an app release.
+4. Credentials can differ by user role, in the same way ETX registration uses a different vendor ID for depositors.
+5. AV REST calls go through a v2x-app-api proxy, so REST secrets stay on the server.
+6. Credentials are encrypted at rest and are never exposed in admin views or logs.
+7. Every existing v2 endpoint keeps its current behavior.
 
-**Non-goals**
+**Non-goals (phase 1)**
 
-- Mobile app changes to use the new API.
-- Obtaining the AV credentials from the AV provider.
-- Deprecating or moving existing v2 endpoints.
-- Per-user or per-device broker credentials. Credentials vary by **role**, not by user ([section 13](#13-alternatives-considered)).
-- Proxying MQTT broker traffic. The app still connects to each broker directly.
-- Listing non-production broker environments. Only production hosts are listed ([section 14](#14-review-decisions)).
+- Mobile app changes.
+- Obtaining credentials from AV.
+- Deprecating any v2 endpoint.
+- Proxying MQTT traffic.
+- Per-user credentials.
+- Rate limiting or caching in the REST proxy.
+- Automated key rotation.
+- Non-production broker entries.
 
 ## 3. Overview
 
 ```mermaid
 flowchart LR
-    subgraph App[Mobile app]
-        A1[Provider list]
-        A2[ACL rules + geohash expansion]
-        A3[MQTT credentials]
-        A4[TIM REST calls]
-    end
-
+    App[Mobile app]
+    Admin[Admin]
     subgraph API[v2x-app-api]
         V2["/prd/v2/** (unchanged)"]
-        V3M["/prd/v3/providers/**"]
-        PX["/prd/v3/providers/{key}/rest/**<br/>REST proxy"]
-        V3A["/prd/v3/admin/providers/**"]
-        SVC[Provider services]
-        ENC[AES-256-GCM encryptor]
+        V3["/prd/v3/providers/**"]
+        PX["REST proxy"]
+        ADM["/prd/v3/admin/providers/**"]
     end
-
     DB[(Postgres)]
-    ETX[ETX / Thingspace]
-    AVB[(AV broker)]
+    TS[Thingspace / ETX]
     AVR[AV REST API]
-    NMI[(NMI broker)]
+    Brokers[(ETX, NMI, AV brokers)]
 
-    A1 & A2 & A3 --> V3M
-    A4 --> PX
-    Admin[Admin] --> V3A
-    V3M & V3A & PX --> SVC
-    SVC --> DB
-    SVC --> ENC
-    SVC -- "ETX ACLs (delegated)" --> ETX
-    PX -- "server-held REST credentials" --> AVR
-    V2 --> ETX
-    App -- MQTT --> AVB & NMI & ETX
+    App --> V2 & V3 & PX
+    Admin --> ADM
+    V3 & ADM & PX --> DB
+    V2 -- "server-held credentials" --> TS
+    PX -- "server-held credentials" --> AVR
+    App -- MQTT --> Brokers
 ```
 
-App startup sequence (the app changes themselves are not part of this ticket):
+At startup, the app:
 
-```mermaid
-sequenceDiagram
-    participant App
-    participant API as v2x-app-api
-    participant AVB as AV broker
-    participant AVR as AV REST API
-    App->>API: GET /prd/v3/providers
-    API-->>App: [etx, nmi, av] connection info + proxy paths (no secrets)
-    App->>API: GET /prd/v3/providers/av/acl-rules
-    API-->>App: topic templates ({agency} resolved, @ left for the app)
-    App->>API: GET /prd/v3/providers/av/credentials
-    Note over API: picks the MQTT credential set for the caller's role
-    API-->>App: MQTT username/password only (Cache-Control: no-store)
-    App->>AVB: MQTT CONNECT + SUBSCRIBE (3x3 geohash grid)
-    App->>API: GET /prd/v3/providers/av/rest/tim?…
-    Note over API: picks the REST credential set for the caller's role
-    API->>AVR: GET {baseUrl}/tims?… (Basic auth added by the API)
-    AVR-->>API: TIM response
-    API-->>App: TIM response
-```
+1. Lists the providers.
+2. Fetches each provider's ACL rules and, where they are needed, its MQTT credentials.
+3. Connects to each broker directly.
 
-## 4. Provider model
+TIM REST calls go through the v2x-app-api proxy.
 
-A **provider** is one MQTT broker that the app can use, plus an optional REST API.
+## 4. Topic templates
 
-| Field | Description |
-|---|---|
-| `key` | Stable lowercase identifier (`etx`, `nmi`, `av`). Used in URLs. |
-| `type` | `ETX`, `NMI`, `AV` or `GENERIC`. Tells the app which provider-specific behaviour applies, if any. |
-| `displayName`, `priority`, `enabled` | Presentation, ordering, and an on/off switch. |
-| `mqtt.connectionSource` | `STATIC`: use the host, port and protocol stored here. `ETX_CONNECTION`: keep using `POST /prd/v2/connection`, which handles certificate provisioning. |
-| `mqtt.host`, `protocol`, `port`, `tls` | Broker endpoint. `protocol` is one of `tcp`, `ssl`, `ws` or `wss`. Always the provider's **production** endpoint. |
-| `mqtt.authType` | Left out when the broker is anonymous. Otherwise `USERNAME_PASSWORD` or `ETX_CERT`. |
-| `payloadFormat` | `GEO_ROUTED_PROTO_UNSIGNED_UPER` (ETX), `IEEE1609_2_SIGNED_UPER` (NMI) or `UNSIGNED_UPER` (AV). |
-| `rest` (server-side only) | Upstream `baseUrl`, `authType` (`NONE`, `BASIC`, `API_KEY`, `BEARER` or `OAUTH2_CLIENT_CREDENTIALS`) and named endpoints (for example `tim` → `/tims`), each with allowed methods and optional role scoping. **The app only sees the proxy paths**, never the upstream URL or the credentials. |
-
-The REST auth model is generic so it can handle whatever AV ends up requiring. Today only AV has a REST API.
-
-## 5. Topic templates
-
-### 5.1 Syntax
-
-ACL topics stay in **ETX ACL syntax**, so the app's existing ACL parsing keeps working. Two tokens are added.
+ACL topics use the existing **ETX ACL syntax**, so the app's current ACL handling still applies. Two tokens are added:
 
 | Token | Meaning | Expanded by |
 |---|---|---|
-| `\|` | Alternatives within one level. `20\|32` gives one topic per alternative. Unchanged from ETX. | App |
-| `+`, `*` | Single-level wildcard. `*` is the ETX form and is treated the same as `+`. | Broker |
-| `#` | Multi-level wildcard. Allowed only as the last level. | Broker |
-| **`@`** *(new)* | **Geohash path.** Occupies a whole level and expands into the geohash characters, separated by `/`. | App |
-| **`{name}`** *(new)* | **Topic variable.** Occupies a whole level and is replaced by a configured value, for example `{agency}` → `DDOT`. | API, before the response is sent |
+| `\|`, `+`, `*`, `#` | Unchanged from ETX: alternatives within a level, and wildcards. | App or broker |
+| **`@`** *(new)* | Geohash path. It fills a whole topic level and expands into one level per geohash character. | App |
+| **`{name}`** *(new)* | Topic variable, such as `{agency}`. It fills a whole level and is replaced by its configured value or values. | API, before responding |
 
-The app never sees `{name}` placeholders, only `@`.
+### 4.1 Topic variables and multiple agencies
 
-### 5.2 Topic variables (`{agency}`)
+- A variable holds **one or more values**. When there are several, the API joins them with `|`, so the app expands them as ordinary ETX alternatives. For example, with agencies `DDOT` and `Raven`:
+  - Template: `MAP/unsigned/J2735/{agency}/@`
+  - Returned to the app: `MAP/unsigned/J2735/DDOT|Raven/@`
+- **Where values come from:** an admin override in the database takes precedence over the deployment default (`AV_TOPIC_AGENCIES=DDOT,Raven`).
+- **Allowed values:** each value must be a literal topic level, with no separators, wildcards, `|`, braces or `@`. Values are case-sensitive and must match AV's topics exactly.
+- **Consistency is enforced on writes:**
+  - A rule can't reference a variable that has no values.
+  - A variable's last value can't be removed while a rule still uses it.
+  - A value change that would push a rule past its subscribe limit is rejected.
 
-- **Value precedence** (highest first):
-  1. A per-provider value set through the admin API (`mqtt_provider_topic_variables`).
-  2. The deployment default from configuration, for example `mqtt.topic-variables.av.agency=${AV_TOPIC_AGENCY:DDOT}`.
-- **Allowed values.** A value must be a single literal topic level. It can't be empty, can't have leading or trailing whitespace, and can't contain `/ + # * | { } @`. This is enforced in the API and by a DB `CHECK` constraint.
-- **Missing values** are a server configuration error.
-  - The admin API rejects any rule save that would leave a variable unresolved.
-  - The mobile endpoint fails closed: it logs the error and returns an error response rather than an unresolved topic ([Q1](#15-open-questions)).
-- **Seeded AV topics:**
-  - `PSM|BSM|SDSM|SPAT|MAP` use `{MSG}/unsigned/J2735/{agency}/@`.
-  - `TIM` uses `TIM/unsigned/J2735/@` (no agency level).
-  - Because TIM has a different shape, AV topics are listed one per message type instead of being combined with `|` in the first level.
+  Together these mean the app never receives an unresolved topic.
 
-### 5.3 Geohash expansion in the app
+### 4.2 Geohash expansion in the app
 
-Each rule includes a `geohash` block:
-
-```json
-{ "symbol": "@", "levels": 7, "publishPrecision": 7, "subscribePrecision": 7, "subscribeGridRadius": 1 }
-```
+Each rule includes the settings the app needs to expand `@`: number of levels (7), publish and subscribe precision (7), and subscribe grid radius (1, which gives a 3×3 grid).
 
 - **Publish:**
-  - Compute the geohash of the event location at `publishPrecision` and substitute it for `@`, one character per level.
-  - If a message's extent covers more than one cell, publish it once per cell with the same message ID each time (NMI's rule).
-- **Subscribe** (mirrors what the app does for ETX today):
-  1. Take the device's geohash at `subscribePrecision`.
-  2. Add the neighbouring cells out to `subscribeGridRadius` rings. Radius 1 gives a 3×3 grid of 9 cells.
-  3. Expand each cell into every subscribe template.
-  4. When the device enters a new cell, unsubscribe from cells that left the grid and subscribe to the new ones.
-- **Padding.** If `subscribePrecision < levels`, fill the remaining levels with `+`. With the defaults (7 = 7) there is no padding.
+  - Take the geohash of the event location and put one character in each level.
+  - A message whose extent spans several cells is published once per cell, with the same message ID.
+- **Subscribe:**
+  - Subscribe to the device's current cell plus its 8 neighbours.
+  - When the device enters a new cell, resubscribe to match the new grid. This is the same approach the app uses for ETX today.
 
-Example, with centre cell `dp3wjzb`:
+Example for centre cell `dp3wjzb`: `TIM/unsigned/J2735/@` becomes `TIM/unsigned/J2735/d/p/3/w/j/z/b`. The app subscribes to that topic and the same topic for each of the 8 neighbouring cells.
 
-| Template | Expanded centre-cell topic |
-|---|---|
-| NMI `v1/g32/@/31` | `v1/g32/d/p/3/w/j/z/b/31` |
-| AV `MAP/unsigned/J2735/{agency}/@` (agency `DDOT`) | `MAP/unsigned/J2735/DDOT/d/p/3/w/j/z/b` |
-| AV `TIM/unsigned/J2735/@` | `TIM/unsigned/J2735/d/p/3/w/j/z/b` |
+### 4.3 Subscription limit and validation
 
-The app subscribes to the same topic for each of the 8 neighbouring cells as well.
+`subscribeLimit` counts the subscriptions the app actually opens. For each template, that's (number of `|` alternatives) × 9 cells, summed over all subscribe templates.
 
-### 5.4 Subscription limit
-
-`subscribeLimit` is the number of MQTT subscriptions the app actually opens:
-
-```
-per template: (product of | alternatives) × ((2r + 1)² if it contains @, else 1)
-total = sum over all subscribe templates
-```
-
-| Seed rule | Subscribe templates | Count |
+| Rule | Subscribe topics | Count |
 |---|---|---|
-| `nmi.mobile.default` | `v1/g32/@/31\|19\|18\|41` | 4 × 9 = **36** |
-| `av.mobile.default` | 6 topics, each containing `@` | 6 × 9 = **54** |
+| NMI | `v1/g32/@/31\|19\|18\|41` | 4 × 9 = 36 |
+| AV, 2 agencies | PSM, BSM, SDSM, SPAT, MAP × `DDOT\|Raven`, plus TIM | 11 × 9 = 99 |
 
-### 5.5 Validation (checked when a rule is saved)
+When a rule is saved, it is rejected with a 400 if any of these fail:
 
-- `@` appears at most once per topic and occupies a whole level. `{name}` placeholders also occupy whole levels.
+- `@` appears at most once and occupies a whole level.
 - `#` appears only as the last level.
-- Publish topics contain no wildcards. `|` alternatives are allowed.
-- `publishPrecision` and `subscribePrecision` are each between 1 and `levels`, and `levels` is at most 12.
-- `subscribeGridRadius` is between 0 and 2.
-- `subscribeLimit` is at least the expanded count from [section 5.4](#54-subscription-limit).
-- Every `{name}` used has a value ([section 5.2](#52-topic-variables-agency)).
+- Publish topics contain no wildcards.
+- Precision and grid radius are within their bounds.
+- The expanded count fits within `subscribeLimit`.
 
-Errors return HTTP 400 through `GlobalExceptionHandler`.
+## 5. API
 
-### 5.6 J2735 message IDs
+### 5.1 Versioning
 
-NMI topics end with the integer `DSRCmsgID`. A reference table, `j2735_message_ids`, holds the mapping so admin tooling and docs don't need hardcoded numbers:
+- **`/prd/v2/**` is unchanged.** Current app builds are unaffected.
+- **New endpoints live under `/prd/v3/**`** and are served by the same application.
+- **ETX reuses the v2 code.** The v3 ETX ACL endpoint calls the same logic as `/prd/v2/acl-rules`, and a test checks that both return the same result.
+- **Existing security and request logging already cover `/prd/v3/**`.**
 
-| BSM | PSM | TIM | SPAT | MAP | SDSM |
-|---|---|---|---|---|---|
-| 20 | 32 | 31 | 19 | 18 | 41 |
+### 5.2 Mobile endpoints
 
-This table is separate from `message_types`, which is the foreign-key domain for deposits.
-
-## 6. API
-
-### 6.1 Versioning
-
-- **Nothing under `/prd/v2/**` changes**: not the paths, payloads or behaviour. Current app builds are unaffected.
-- **All new endpoints are under `/prd/v3/**`.** They are served by the same application, in a new `usdot.v2x.app.api.v3.*` package, with a shared `ApiPaths` constants class (`V2`, `V3`).
-- **v3 reuses the v2 services.** `GET /prd/v3/providers/etx/acl-rules` calls the same `RegistrationApi.getDeviceRoles()` and `AclRulesFilter` as `GET /prd/v2/acl-rules`, so the ETX logic has one source of truth. A test asserts the two return identical bodies.
-- **No infrastructure changes are needed.** `AccessController` (`/**`), `RequestBodyCaptureFilter` and `ErrorLoggingService` (both keyed on `/prd/`) already cover `/prd/v3/**`.
-- **OpenAPI** stays as one springdoc document, so the `generateOpenApiDocs` output (`docs/v2x-app-api-openapi.json`) keeps building. New controllers are tagged `Providers (v3)` and `Provider Admin (v3)`.
-
-### 6.2 Mobile endpoints
-
-These allow `ADMIN`, `DEPOSITOR` and `USER`, the same as `/prd/v2/acl-rules`.
+These are open to `USER`, `DEPOSITOR` and `ADMIN`.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/prd/v3/providers` | Enabled providers ordered by `priority`: connection info and the REST proxy paths the caller may use. **No secrets and no upstream REST URLs.** |
-| GET | `/prd/v3/providers/{key}/acl-rules` | ACL rules in the ETX shape plus `geohash`, filtered to the caller's roles, with variables resolved. |
-| GET | `/prd/v3/providers/{key}/credentials` | **MQTT credentials only**, using the set for the caller's role ([section 8.1](#81-role-based-credential-sets)). Sent with `Cache-Control: no-store`. Returns 404 when the provider has no MQTT credentials, as with NMI. |
-| *per endpoint* | `/prd/v3/providers/{key}/rest/{endpoint}[/…]` | **REST proxy** to the provider's named upstream endpoint, authenticated with the server-held REST credentials for the caller's role ([section 7](#7-rest-proxy)). |
+| GET | `/prd/v3/providers` | Enabled providers: connection info, payload format, and the proxy endpoints available to the caller. No secrets and no upstream URLs. |
+| GET | `/prd/v3/providers/{key}/acl-rules` | ACL rules in the ETX format plus the geohash settings, with variables resolved. |
+| GET | `/prd/v3/providers/{key}/credentials` | MQTT credentials for the caller's role. Sent with `Cache-Control: no-store`. Returns 404 if the provider has none, as with NMI. |
+| *varies* | `/prd/v3/providers/{key}/rest/{endpoint}/…` | REST proxy ([section 6](#6-rest-proxy)). |
 
 <details>
-<summary><code>GET /prd/v3/providers</code> example</summary>
-
-Null fields are omitted.
-
-```json
-[
-    {
-        "key": "etx",
-        "type": "ETX",
-        "displayName": "ETX",
-        "enabled": true,
-        "priority": 0,
-        "mqtt": { "connectionSource": "ETX_CONNECTION", "authType": "ETX_CERT" },
-        "payloadFormat": "GEO_ROUTED_PROTO_UNSIGNED_UPER",
-        "aclRulesPath": "/prd/v3/providers/etx/acl-rules"
-    },
-    {
-        "key": "nmi",
-        "type": "NMI",
-        "displayName": "OmniTrust National Mobility Interchange",
-        "enabled": true,
-        "priority": 10,
-        "mqtt": { "connectionSource": "STATIC", "host": "mqtt.us.mobilityinterchange.com", "protocol": "tcp", "port": 1883, "tls": false },
-        "payloadFormat": "IEEE1609_2_SIGNED_UPER",
-        "aclRulesPath": "/prd/v3/providers/nmi/acl-rules"
-    },
-    {
-        "key": "av",
-        "type": "AV",
-        "displayName": "AV",
-        "enabled": true,
-        "priority": 20,
-        "mqtt": { "connectionSource": "STATIC", "host": "v2x.aitoms.net", "protocol": "tcp", "port": 1883, "tls": false, "authType": "USERNAME_PASSWORD" },
-        "rest": {
-            "endpoints": {
-                "tim": { "path": "/prd/v3/providers/av/rest/tim", "methods": ["GET"] }
-            }
-        },
-        "payloadFormat": "UNSIGNED_UPER",
-        "aclRulesPath": "/prd/v3/providers/av/acl-rules",
-        "credentialsPath": "/prd/v3/providers/av/credentials"
-    }
-]
-```
-
-- `credentialsPath` is included only when a credential set with MQTT credentials resolves for the caller's role.
-- `rest.endpoints` lists only the endpoints the caller's role may use.
-</details>
-
-<details>
-<summary><code>GET /prd/v3/providers/av/acl-rules</code> example (agency = DDOT)</summary>
+<summary>Example: <code>GET /prd/v3/providers/av/acl-rules</code></summary>
 
 ```json
 [
     {
         "name": "av.mobile.default",
-        "subscribeLimit": 54,
+        "subscribeLimit": 99,
         "publishRateLimit": 10,
         "geohash": { "symbol": "@", "levels": 7, "publishPrecision": 7, "subscribePrecision": 7, "subscribeGridRadius": 1 },
         "publish": [
-            "PSM/unsigned/J2735/DDOT/@",
-            "BSM/unsigned/J2735/DDOT/@"
+            "PSM/unsigned/J2735/DDOT|Raven/@",
+            "BSM/unsigned/J2735/DDOT|Raven/@"
         ],
         "subscribe": [
-            "PSM/unsigned/J2735/DDOT/@",
-            "BSM/unsigned/J2735/DDOT/@",
-            "SDSM/unsigned/J2735/DDOT/@",
-            "SPAT/unsigned/J2735/DDOT/@",
-            "MAP/unsigned/J2735/DDOT/@",
+            "PSM/unsigned/J2735/DDOT|Raven/@",
+            "BSM/unsigned/J2735/DDOT|Raven/@",
+            "SDSM/unsigned/J2735/DDOT|Raven/@",
+            "SPAT/unsigned/J2735/DDOT|Raven/@",
+            "MAP/unsigned/J2735/DDOT|Raven/@",
             "TIM/unsigned/J2735/@"
         ]
     }
 ]
 ```
-
-The NMI rule has the same shape, with `publish: ["v1/g32/@/20|32"]`, `subscribe: ["v1/g32/@/31|19|18|41"]` and `subscribeLimit: 36`.
 </details>
 
-<details>
-<summary><code>GET /prd/v3/providers/av/credentials</code> example</summary>
+### 5.3 Admin endpoints (`ADMIN` only)
 
-```json
-{
-    "provider": "av",
-    "credentialRole": "DEPOSITOR",
-    "mqtt": { "username": "…", "password": "…" },
-    "updatedAt": "2026-11-10T12:00:00Z"
-}
-```
+These follow the conventions of the existing admin endpoints: POST upserts a record, and DELETE soft-deletes it.
 
-- `credentialRole` tells the app which set was selected (`DEFAULT`, `USER`, `DEPOSITOR` or `ADMIN`). It contains no secret.
-- REST credentials are **never** included.
-</details>
-
-### 6.3 Admin endpoints (`ROLE_ADMIN` only)
-
-These follow the `VendorLimitsRestController` conventions: POST upserts, and DELETE soft-deletes (`is_active = false`).
-
-| Method | Path | Purpose |
+| Resource | Path under `/prd/v3/admin/providers` | Operations |
 |---|---|---|
-| GET | `/prd/v3/admin/providers` | List all providers, including disabled ones. |
-| GET | `/prd/v3/admin/providers/{key}` | Get one provider, including the upstream REST config. |
-| POST | `/prd/v3/admin/providers` | Create a provider, or upsert it by `key`. |
-| DELETE | `/prd/v3/admin/providers/{key}` | Soft-delete a provider. |
-| GET / POST | `/prd/v3/admin/providers/{key}/rest-endpoints` | List or upsert named REST endpoints: name, upstream path, allowed methods and role scoping. |
-| DELETE | `/prd/v3/admin/providers/{key}/rest-endpoints/{name}` | Remove an endpoint from the proxy allowlist. |
-| GET / POST | `/prd/v3/admin/providers/{key}/acl-rules` | List rules with their role scoping, or upsert a rule by `name` (validated per [section 5.5](#55-validation-checked-when-a-rule-is-saved)). |
-| DELETE | `/prd/v3/admin/providers/{key}/acl-rules/{name}` | Soft-delete a rule. |
-| GET | `/prd/v3/admin/providers/{key}/topic-variables` | Effective variable values, each marked with its source (DB or configuration). |
-| PUT / DELETE | `/prd/v3/admin/providers/{key}/topic-variables/{name}` | Set a DB override, or remove it and fall back to the configured default. |
-| GET | `/prd/v3/admin/providers/{key}/credentials` | **Masked** view of every credential set, one per role: usernames, `hasPassword`/`hasSecret`, the last 4 characters (`••••1234`) and `updatedAt`. |
-| PUT | `/prd/v3/admin/providers/{key}/credentials/{role}` | Set or rotate the credential set for `default`, `user`, `depositor` or `admin`. Write-only. |
-| DELETE | `/prd/v3/admin/providers/{key}/credentials/{role}` | Remove one role's credential set. |
+| Providers | `/`, `/{key}` | List, get, upsert, delete, enable/disable |
+| ACL rules | `/{key}/acl-rules[/{name}]` | List, upsert (validated), delete |
+| Topic variables | `/{key}/topic-variables[/{name}]` | List effective values, set a value list, revert to the default |
+| REST endpoints | `/{key}/rest-endpoints[/{name}]` | List, upsert, delete the proxy allowlist |
+| Credentials | `/{key}/credentials[/{role}]` | Masked view; write-only set/rotate and delete, per role |
 
-### 6.4 Error behaviour
+## 6. REST proxy
 
-| Condition | Status |
-|---|---|
-| Unknown or disabled provider key on a mobile endpoint | 404 |
-| No MQTT credential set resolves for the caller's role | 404 |
-| Invalid topic template, limit or variable value | 400 |
-| Non-admin calling an admin endpoint | 403 |
-| Encryption key missing, or a stored value can't be decrypted with the current key | 503 |
-| ETX upstream failure (ETX provider only) | Same as `/prd/v2/acl-rules` today |
-| Proxy errors | See [section 7.3](#73-request-and-response-handling) |
+### 6.1 How it works
 
-## 7. REST proxy
+The app calls `/prd/v3/providers/{key}/rest/{endpoint}/…`. v2x-app-api forwards the request to the provider's configured REST endpoint and adds the upstream credentials for the caller's role ([section 7](#7-credentials)). It then returns the response to the app.
 
-The app never holds REST API secrets. Instead, it calls v2x-app-api, which forwards the request to the provider's REST API and adds the upstream authentication itself.
+- **Allowlisted endpoints only.**
+  - The upstream base URL and the endpoint paths come from admin configuration, never from the request.
+  - Each endpoint has allowed HTTP methods and can be limited to certain roles.
+  - Path traversal is rejected.
+- **The caller's token is never forwarded.**
+  - Only a small allowlist of request and response headers is passed through.
+  - Upstream auth supports Basic, API key, Bearer and OAuth2 client credentials, with OAuth2 tokens cached.
+- **Errors are mapped to make the cause clear.** If the upstream rejects our credentials, the app gets a 502, because this is a server problem rather than the caller's. An upstream timeout returns a 504.
+- **Endpoints come from AV's OpenAPI spec.** AV will provide the spec. The endpoints, methods and auth type will be configured from it, and none are seeded until it arrives.
 
-### 7.1 Routing and allowlist
+### 6.2 Same approach as the existing Thingspace proxy
 
-```
-/prd/v3/providers/{key}/rest/{endpoint}[/{subpath…}][?query]
-        → {rest_base_url}{endpoint.path}[/{subpath…}][?query]
-```
+v2x-app-api already sits between the app and Thingspace. The AV proxy follows the same model.
 
-Example: `GET /prd/v3/providers/av/rest/tim?lat=38.9&lon=-77.0` is forwarded to `GET {AV base URL}/tims?lat=38.9&lon=-77.0`.
-
-- **Only named endpoints are reachable**, as configured in `mqtt_provider_rest_endpoints`. The base URL and endpoint paths are admin-controlled and never taken from the request, so the proxy can't be pointed at arbitrary hosts (SSRF).
-- `subpath` must be plain path segments. Any `.` or `..` segment, encoded `/` or `\`, or absolute URL is rejected with 400.
-- Each endpoint has **allowed methods** (default `GET`). Any other method returns 405.
-- Each endpoint has optional **role scoping**, the same CSV model as ACL rules. A caller without a matching role gets 403. Example: a TIM `POST` could be limited to `DEPOSITOR`.
-- The provider must be enabled, and `rest_base_url` must be `https://`, unless an explicit dev override is set.
-
-### 7.2 Upstream authentication
-
-- The proxy picks the **REST credential set for the caller's role**, using the same rules as MQTT ([section 8.1](#81-role-based-credential-sets)).
-- `BASIC`: sends `Authorization: Basic …`.
-- `API_KEY`: sends the configured header.
-- `BEARER`: sends `Authorization: Bearer …`.
-- `OAUTH2_CLIENT_CREDENTIALS`: fetches a token from `tokenUrl` and caches it per (provider, credential role) until shortly before it expires.
-- The caller's own `Authorization` header (the Keycloak token) is **always removed** and never forwarded upstream.
-
-### 7.3 Request and response handling
-
-| Aspect | Behaviour |
-|---|---|
-| Request headers forwarded | Allowlist: `Accept`, `Accept-Language`, `Content-Type`, `If-None-Match`, `If-Modified-Since`. All others are dropped, including `Authorization`, `Cookie` and hop-by-hop headers. |
-| Request body | Forwarded for methods that allow one, up to the configured size limit (default 1 MiB). Larger bodies return 413. |
-| Response | Upstream status, body and an allowlisted set of headers are passed through: `Content-Type`, `Cache-Control`, `ETag`, `Last-Modified`. `Set-Cookie` and hop-by-hop headers are dropped. |
-| Upstream `401`/`403` | Returned as **502**. This means the server's credentials are wrong, not the caller's. It is logged so an admin can rotate them. |
-| Upstream unreachable, or timeout | 502, or 504 for a timeout. Timeouts and buffer limits come from the shared `WebClientConfig`/`WebClientProperties`. |
-| Upstream response too large | 502 once it exceeds the configured response limit. |
-| Client | Non-blocking `WebClient`, consistent with the existing ETX and Keycloak clients. The shared retry policy applies only to `GET`/`HEAD`. Non-idempotent methods are never retried. |
-| Logging | The method, endpoint name, status and latency are logged. **Never logged:** the upstream credentials, the outgoing `Authorization` header, or response bodies. |
-
-### 7.4 Proxy configuration
-
-| Property | Default | Purpose |
+| | Thingspace (existing) | AV (proposed) |
 |---|---|---|
-| `provider.rest-proxy.connect-timeout` | `5s` | Upstream connect timeout. |
-| `provider.rest-proxy.response-timeout` | `30s` | Upstream response timeout. |
-| `provider.rest-proxy.max-request-bytes` | `1MiB` | Largest request body accepted from the app. |
-| `provider.rest-proxy.max-response-bytes` | `10MiB` | Largest upstream response the proxy will buffer. |
-| `provider.rest-proxy.allow-insecure-upstream` | `false` | Allows an `http://` base URL. Local development only. |
+| Upstream credentials | OAuth2 client key/secret and M2M login, held by the API | AV REST credentials, held by the API (encrypted in the database) |
+| What the app holds | Its Keycloak token only | Its Keycloak token only |
+| Token handling | API obtains and caches access and session tokens | API adds Basic/API-key/Bearer auth, or obtains and caches OAuth2 tokens |
+| Role-specific behavior | Depositors use a different vendor ID | Credential set chosen by role |
+| Server-side controls | Registration limits, ACL subscribe filter, response mapping | Endpoint allowlist, method and role scoping. Mapping or filtering can be added later. |
 
-## 8. Credentials
+**Benefit: AV changes are absorbed in the API instead of in app builds.** The app depends only on the stable v2x-app-api path. Each of these is a configuration change, or at most an API deployment, with no new app build:
 
-### 8.1 Role-based credential sets
+- Rotating or replacing AV credentials, or giving a role its own credentials.
+- Changing AV's base URL, its auth scheme, or the upstream path of an endpoint.
+- Adding, removing or restricting endpoints.
+- Adapting to a new AV API version by remapping, or by transforming requests and responses in the API.
+- Adding rate limiting, caching or response filtering later. The ACL subscribe filter was added for ETX the same way.
 
-ETX registration already varies by role: `ROLE_DEPOSITOR` users register under `etx.depositor-vendor-id`, and everyone else uses `etx.vendor-id` (`SecurityContextUtils.determineVendorId()`). Provider credentials follow the same pattern.
+## 7. Credentials
 
-- A provider can have **one credential set per role**: `DEFAULT`, `USER`, `DEPOSITOR` and `ADMIN`.
-- Each set can include MQTT credentials (sent to the app), REST credentials (used only by the proxy), or both.
-- **Resolution** happens per request. The caller gets the set for its highest-precedence role that has one:
+### 7.1 Credential sets by role
 
-  ```
-  ADMIN → DEPOSITOR → USER → DEFAULT
-  ```
+- A provider can have one credential set per role: `USER`, `DEPOSITOR` or `ADMIN`.
+- A set can contain MQTT credentials (returned to the app), REST credentials (used only by the proxy), or both.
+- **Selection order:** `ADMIN → DEPOSITOR → USER`. The caller gets the first set that exists for a role they hold, working down the chain. For example, an admin with no admin set gets the depositor set.
+- MQTT and REST credentials are selected independently. This lets a role have its own MQTT login while sharing a REST credential.
+- If no set applies, the credentials endpoint returns 404 and authenticated proxy calls fail with a 502. Both cases are logged.
 
-  - Example 1: AV has a `DEFAULT` set and a `DEPOSITOR` set. Depositors get the depositor credentials, and everyone else gets the default.
-  - Example 2: AV has only a `DEFAULT` set. Every role gets it, which matches the original shared-credential behaviour.
-- MQTT and REST are resolved with the same rule, but **independently**. If the matching set has no MQTT credentials, resolution continues down the chain for MQTT. REST works the same way. This lets a depositor-specific MQTT login sit alongside a single shared REST credential.
-- If nothing resolves, the credentials endpoint returns 404 and the proxy returns 502 for authenticated endpoints. Both are logged as configuration gaps.
+### 7.2 Security
 
-### 8.2 Security controls
+- **Encrypted at rest** with AES-256-GCM, using a random IV per value and a key version prefix. The key comes from the environment (`PROVIDER_CREDENTIALS_ENCRYPTION_KEY`) and is never committed.
+- **If the key is missing or wrong,** the application still starts. The credential and proxy features return 503, and the rest of the API is unaffected.
+- **Key rotation** is manual in phase 1: change the key, bump the version, redeploy, and re-enter the credentials.
+- **Admins see masked values only**, and the credential write endpoint is write-only.
+- **Only MQTT credentials ever reach devices.** They are served over HTTPS from a dedicated endpoint with `no-store`. REST credentials never leave the server.
+- **No secrets in logs.**
+  - The existing error logging saves the bodies of failed POST/PUT requests to the database. Admin credential requests must be excluded from this, and a test must cover it.
+  - Credential responses and outgoing auth headers are never logged.
+- **No secrets in SQL, sample env files or docs.**
+- **Remaining risk:** MQTT credentials are shared within a role, so a leaked credential works for anyone with that role. Role-specific sets limit how far a leak spreads, and rotation plus AV's broker ACLs mitigate it further.
 
-| Concern | Design |
+## 8. Data model
+
+The new tables are added by migration `010_add_mqtt_providers.sql`, following the style of the existing migrations (idempotent, with audit columns and triggers). There are no changes to existing tables.
+
+| Table | Purpose |
 |---|---|
-| **At rest** | AES-256-GCM via JDK `javax.crypto`, with no new dependency. Each value gets a random 12-byte IV and a 128-bit tag, stored as `v{keyVersion}:base64(iv‖ciphertext‖tag)`. A JPA `AttributeConverter` applies this to the `*_enc` columns. Usernames and client IDs are stored in plain text. |
-| **Key** | `PROVIDER_CREDENTIALS_ENCRYPTION_KEY` is a base64 32-byte key (generate with `openssl rand -base64 32`). It comes from the environment and is never committed. `PROVIDER_CREDENTIALS_KEY_VERSION` tags new ciphertext. |
-| **Missing or wrong key** | The app still starts. The credential endpoints and authenticated proxy calls return 503 and log a warning. The rest of the API is unaffected. |
-| **Key rotation** | Phase 1: generate a new key, bump the version, redeploy, then re-enter the credentials through the admin PUT. Each value carries its version, so stale values are detectable. A follow-up could support several keys with automatic re-encryption ([Q2](#15-open-questions)). |
-| **Admin visibility** | Masked values only. The PUT is write-only. |
-| **Mobile delivery** | Only **MQTT** credentials reach devices. They are served to authenticated roles over HTTPS from a dedicated endpoint (not part of `/providers`), with `Cache-Control: no-store`. **REST credentials never leave the server.** |
-| **Logging** | Secrets are never logged. **Required change:** `ErrorLoggingService` saves the raw POST/PUT body of any failed `/prd/` request to `error_logs`. A failed `PUT …/credentials/{role}` (a 400 validation error, or a 503 because the key is missing) would therefore store plaintext secrets. Admin credential paths must be excluded from body capture, or their bodies redacted, with a test. `GET …/credentials` responses and the proxy's outgoing auth headers are never logged. |
-| **Seeds and migrations** | Secret values never appear in SQL, `sample.env`, `docker-compose.yml` or the docs. |
-| **Residual risk** | MQTT credentials are shared within a role, so a credential extracted from one device works on another device with the same role. Role-specific sets limit how far a leak spreads. Rotation and AV-side broker ACLs are the remaining mitigations. |
+| `mqtt_providers` | Key, type, priority, enabled flag, MQTT connection, payload format, REST base URL and auth type |
+| `mqtt_provider_rest_endpoints` | Proxy allowlist: name, upstream path, allowed methods, roles |
+| `mqtt_provider_acl_rules` and topic child tables | Limits, geohash settings, role scoping, publish and subscribe templates |
+| `mqtt_provider_topic_variables` | Admin overrides: an ordered list of values per variable (for example `agency` → `DDOT`, `Raven`) |
+| `mqtt_provider_credentials` | One row per (provider, role), with encrypted secrets |
+| `j2735_message_ids` | Reference mapping of message types to the IDs used in NMI topics (BSM 20, PSM 32, TIM 31, SPAT 19, MAP 18, SDSM 41) |
 
-## 9. Data model
+**Seed data** is written so that re-running the migration never overwrites admin changes:
 
-The schema is delivered as migration `010_add_mqtt_providers.sql`. It follows the style of migrations 001–009: wrapped in `BEGIN`/`COMMIT`, idempotent, and using the `update_updated_at_column()` trigger. The same DDL goes into `init-db.sql`.
+- **etx:** uses the existing connection endpoint. Its ACLs still come from ETX.
+- **nmi:** the production host, plus its default rule.
+- **av:** its default rule, seeded **disabled**. An admin enables it after configuring REST endpoints from AV's spec and entering credentials.
+- No secrets are seeded.
 
-```mermaid
-erDiagram
-    mqtt_providers ||--o{ mqtt_provider_rest_endpoints : has
-    mqtt_providers ||--o{ mqtt_provider_acl_rules : has
-    mqtt_provider_acl_rules ||--o{ mqtt_provider_acl_publish_topics : has
-    mqtt_provider_acl_rules ||--o{ mqtt_provider_acl_subscribe_topics : has
-    mqtt_providers ||--o{ mqtt_provider_topic_variables : has
-    mqtt_providers ||--o{ mqtt_provider_credentials : "one per role"
+## 9. Rollout (Leidos VM)
 
-    mqtt_providers {
-        bigint id PK
-        varchar provider_key UK
-        varchar provider_type
-        varchar connection_source
-        varchar mqtt_host
-        varchar mqtt_protocol
-        int mqtt_port
-        varchar mqtt_auth_type
-        varchar payload_format
-        varchar rest_base_url
-        varchar rest_auth_type
-        bool enabled
-        bool is_active
-    }
-    mqtt_provider_rest_endpoints {
-        bigint provider_id PK
-        varchar name PK
-        varchar path
-        varchar allowed_methods
-        varchar roles
-    }
-    mqtt_provider_acl_rules {
-        bigint id PK
-        bigint provider_id FK
-        varchar name
-        int subscribe_limit
-        int publish_rate_limit
-        int geohash_levels
-        int publish_precision
-        int subscribe_precision
-        int subscribe_grid_radius
-        varchar roles
-    }
-    mqtt_provider_credentials {
-        bigint id PK
-        bigint provider_id FK
-        varchar credential_role
-        varchar mqtt_username
-        text mqtt_password_enc
-        varchar rest_username
-        varchar rest_client_id
-        text rest_secret_enc
-        int key_version
-    }
-    mqtt_provider_topic_variables {
-        bigint provider_id PK
-        varchar name PK
-        varchar value
-    }
-```
-
-- **Child tables instead of JSONB.** Topics, REST endpoints and variables are child tables, mapped with `@ElementCollection` or as entities in the same way as `models/Path.java`. This keeps the `openapi` profile working, since it boots on H2 with `create-drop`.
-- **Credential role.**
-  - `mqtt_provider_credentials.credential_role` is `NOT NULL DEFAULT 'DEFAULT'` and checked against `DEFAULT`/`USER`/`DEPOSITOR`/`ADMIN`.
-  - `UNIQUE (provider_id, credential_role)` replaces the earlier one-set-per-provider constraint.
-  - A `NOT NULL` sentinel is used instead of `NULL` so the unique constraint actually holds, because Postgres treats NULLs as distinct.
-- **REST endpoints:**
-  - `allowed_methods` is a CSV, `NOT NULL DEFAULT 'GET'`, checked against standard HTTP methods.
-  - `roles` is a nullable CSV. `NULL` means all roles.
-- **DB constraints backing up the API validation:**
-  - key format `^[a-z0-9-]+$`
-  - protocol and port ranges
-  - an enabled `STATIC` provider must have a host, protocol and port
-  - geohash precision and radius bounds
-  - topic-variable value format
-- **Seed data never overwrites admin edits.** Rows use `ON CONFLICT DO NOTHING`, and child rows are seeded only when this run created the provider. The seeds:
-  - `etx`: `ETX_CONNECTION`. ACLs come from ETX, so no rules are seeded.
-  - `nmi`: the **production** host `mqtt.us.mobilityinterchange.com`, plus the rule `nmi.mobile.default`.
-  - `av`:
-    - seeded **disabled**
-    - one REST endpoint, `tim` → `/tims` (`GET`)
-    - the rule `av.mobile.default`
-    - An admin adds the REST base URL and credential sets, then enables the provider.
-  - No secrets are ever seeded.
-
-## 10. Backward compatibility
-
-- All v2 endpoints are unchanged, and their existing tests run unmodified.
-- The v3 ETX ACL endpoint delegates to the v2 code, and a parity test locks that in.
-- The migration only adds tables, so existing tables and `ddl-auto=update` are unaffected.
-- Nothing is visible to the app until it is updated to call `/prd/v3/providers`.
-
-## 11. Configuration
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `PROVIDER_CREDENTIALS_ENCRYPTION_KEY` | *(empty)* | AES-256 key, base64. Required for credentials and the authenticated proxy. |
-| `PROVIDER_CREDENTIALS_KEY_VERSION` | `1` | Version tag written into new ciphertext. |
-| `AV_TOPIC_AGENCY` | `DDOT` | Default value for `{agency}` in AV topics. Can be overridden per provider through the admin API. |
-| `PROVIDER_REST_PROXY_*` | see [section 7.4](#74-proxy-configuration) | Proxy timeouts and size limits. |
-
-All of these are documented in `sample.env` and passed through `docker-compose.yml`.
-
-## 12. Deployment and rollout (Leidos VM)
-
-1. Back up Postgres.
-2. Generate the encryption key and store it with the VM's other secrets. Add it and `AV_TOPIC_AGENCY` to the environment.
-3. Deploy the new image and apply migration 010 (`psql -v ON_ERROR_STOP=1 --single-transaction`).
-4. As admin:
-   1. Set AV's REST base URL.
-   2. Confirm or override the agency.
-   3. PUT the AV `DEFAULT` credential set, plus a `DEPOSITOR` set if AV issues separate credentials.
-   4. Enable `av`.
+1. Back up the database.
+2. Add the encryption key and the agency defaults to the environment.
+3. Deploy the image and apply migration 010.
+4. As an admin:
+   1. Configure the AV REST endpoints.
+   2. Enter credentials for each role.
+   3. Enable AV.
 5. Verify:
-   - `/prd/v3/providers` lists etx, nmi (production host) and av.
-   - The ACL rules show the resolved agency.
-   - A `USER` token and a `DEPOSITOR` token each receive their expected MQTT credential set.
-   - `GET /prd/v3/providers/av/rest/tim` returns AV data.
-   - `psql` shows only ciphertext in the credentials table.
+   - The provider list is correct.
+   - The ACL rules include both agencies.
+   - `USER` and `DEPOSITOR` tokens each receive their own credential set.
+   - The proxy returns AV data.
+   - Only ciphertext is stored in the database.
    - The v2 endpoints are unchanged.
-   - `mosquitto_sub` receives traffic on the expanded AV and NMI topics.
-6. Rollback:
-   - To hide AV without a redeploy, disable it through the admin API.
-   - For a full rollback, redeploy the previous image. The new tables aren't used by older code, so they can stay in place or be dropped with a documented down script.
+   - Broker smoke tests pass.
+
+**Rollback:** disabling AV takes effect immediately, with no redeploy. Redeploying the previous image is also safe, because older code ignores the new tables.
+
+## 10. Testing
+
+- **Unit tests:**
+  - Topic validation and subscription counts.
+  - Resolution of multi-value variables.
+  - Encryption, including round trip, tamper detection and wrong or missing key.
+  - Credential selection by role.
+  - Proxy behavior: allowlist, method and role checks, header handling, upstream auth, and error mapping, tested against a mock upstream.
+  - Masking of credentials in admin views, and keeping them out of the error log.
+  - v2 and v3 ETX parity.
+- **Migration test:** idempotency and constraints, in the style of the existing migration tests.
+- **Local integration testing:**
+  - Admin and mobile flows with each role.
+  - The proxy, against AV or a stub built from its OpenAPI spec.
+  - v2 regression.
+  - Broker smoke tests.
+  - Results are recorded on the ticket.
+
+## 11. Review decisions
+
+| # | Decision |
+|---|---|
+| D1 | Credentials can differ by role (`USER`, `DEPOSITOR`, `ADMIN`), selected in the order `ADMIN → DEPOSITOR → USER`. There is no separate default set. |
+| D2 | v2x-app-api proxies the AV REST API. The app receives MQTT credentials only. |
+| D3 | Only the NMI production host appears in the provider list. |
+| D4 | Key rotation is manual in phase 1. |
+| D5 | AV topic split confirmed: the app publishes PSM and BSM, and subscribes to PSM, BSM, SDSM, SPAT, MAP and TIM. |
+| D6 | AV REST endpoints and auth will be configured from the OpenAPI spec AV provides. |
+| D7 | No proxy rate limiting or caching in phase 1. |
+| D8 | `{agency}` supports a list of agencies. The initial agencies are `DDOT` and `Raven`. |
+
+## 12. Open questions
+
+1. **Publishing when there are several agencies.** With the template `PSM/unsigned/J2735/DDOT|Raven/@`, should the app publish each message under **every** listed agency (the draft assumption) or under only one? If only one, which one: for example, selected by region, or a per-agency publish list?
 
 ## 13. Alternatives considered
 
-| Alternative | Why not (for now) |
+| Alternative | Reason not chosen |
 |---|---|
-| Provider config in `application.yml` or env only | Every change would need a redeploy, and credentials couldn't be managed at runtime. Env/yml is kept only for deployment defaults such as the agency. |
-| JSONB columns for topics and endpoints | A simpler schema, but it breaks the H2-based `openapi` profile and loses DB-level validation. |
-| A secrets manager (Vault or a cloud KMS) instead of app-level AES-GCM | Stronger, but no such service exists in the current deployments, including the Leidos VM. The encryptor sits behind one class, so it can be swapped later. |
-| One shared credential set for all roles | Replaced by role-based sets ([section 8.1](#81-role-based-credential-sets)). A single `DEFAULT` set still behaves exactly like a shared credential. |
-| Per-user broker credentials | AV has no provisioning API for minting per-user credentials. Role-based sets give most of the separation without one. |
-| **The app calls the AV REST API directly with credentials from v2x-app-api** | **Rejected in review.** It would put a long-lived REST secret on every device. The proxy keeps the secret on the server and lets an admin change upstream URLs and auth without an app release. The cost is extra load and latency on v2x-app-api, plus a proxy to maintain. |
-| A generic open proxy (the app supplies the URL) | An SSRF risk. Only admin-configured named endpoints are reachable. |
-| Listing test and production broker hosts per environment | **Rejected in review.** Only production hosts are listed. Non-production testing can point a local instance's admin config at a test host, but nothing other than production is seeded or documented as a provider entry. |
-| Structured topic fields (prefix, agency, message type) instead of templates | Would need a new parser in the app. Templates in the ETX format reuse the app's existing ACL handling. |
-| Credentials embedded in `/prd/v3/providers` | A separate endpoint keeps secrets out of a frequently fetched, cache-friendly response, and makes `no-store` and logging controls simpler. |
-| Moving v2 endpoints to v3 now | Out of scope. v3 aliases can be added one endpoint at a time later (`@RequestMapping({V2 + "/…", V3 + "/…"})`). |
+| Config in env or yml only | Every change would need a redeploy, and credentials couldn't be managed at runtime. Env remains for deployment defaults. |
+| External secrets manager | None exists in the current deployments. The encryption code is isolated, so it can be swapped in later. |
+| App calls AV REST directly | Puts a long-lived REST secret on every device, and ties the app to AV's API. Rejected in review. |
+| Generic open proxy | SSRF risk. Only admin-configured endpoints are reachable. |
+| One agency per deployment | Doesn't support DDOT and Raven together. Multi-value variables reuse the existing `\|` expansion. |
+| Structured topic fields instead of templates | Would need a new parser in the app. Templates reuse the existing ACL handling. |
 
-## 14. Review decisions
+## 14. Implementation plan
 
-| # | Question | Decision |
-|---|---|---|
-| D1 | Should every app user get the same AV credentials? | **No. Credentials can differ by user role**, in the same way ETX registration gives depositors a different vendor ID. Implemented as role-based credential sets with `DEFAULT` fallback ([section 8.1](#81-role-based-credential-sets)). |
-| D2 | Should v2x-app-api proxy the AV REST API so the secret never reaches devices? | **Yes.** REST calls go through `/prd/v3/providers/{key}/rest/{endpoint}` ([section 7](#7-rest-proxy)). The credentials endpoint returns MQTT credentials only. |
-| D3 | Should the NMI test host or the production host be used? | **Only the production host** (`mqtt.us.mobilityinterchange.com`) appears in the providers list. The test host is not seeded or documented as a provider entry. |
+Implementation starts after this design is approved. It is delivered as a series of small PRs, each with its own tests and docs, and none of them changes v2 behavior:
 
-## 15. Open questions
+1. Credential encryption.
+2. Topic template validation and variable resolution, with multi-value support.
+3. Database migration 010.
+4. Provider domain and admin API (providers, ACL rules, topic variables, REST endpoints).
+5. Role-based credentials: admin and mobile endpoints, and redaction from the error log.
+6. Mobile v3 provider and ACL endpoints, with ETX delegation.
+7. REST proxy.
+8. OpenAPI and README updates, plus an AV enablement runbook.
 
-1. **Unresolved topic variable at read time.** Should the mobile ACL endpoint return a 5xx, or omit only the affected topics? The draft fails closed with a 5xx.
-2. **Key rotation.** Is manually re-entering credentials acceptable for phase 1, or is multi-key rotation with automatic re-encryption needed now?
-3. **AV topic split.** The draft has PSM and BSM published and all six types subscribed. This needs to be confirmed with AV. The split is data, so changing it needs no code.
-4. **AV REST details.** The draft assumes `BASIC` auth and `GET /tims`. Please confirm the auth type, the TIM endpoint paths and query parameters, and whether the app ever writes (POST/PUT) to AV.
-5. **Credential role precedence.** Is `ADMIN → DEPOSITOR → USER → DEFAULT` right? In particular, should an admin using the mobile app get depositor credentials when no `ADMIN` set exists? The draft says yes, by falling through to `DEPOSITOR`.
-6. **Proxy rate limiting and caching.** Should the proxy apply per-user rate limits (for example, reusing `user_limits`) or cache TIM responses briefly to protect the AV API? The draft passes `Cache-Control` and `ETag` through and adds neither.
-
-## 16. Testing
-
-**Unit tests**
-
-- **Topic template validator:**
-  - valid and invalid templates (`@` used twice, `#` in the middle, `a@b`, wildcards in publish)
-  - precision bounds
-  - expanded counts (36 and 54), and a limit below the count
-- **Variable resolution:** precedence, invalid values, and unresolved variables.
-- **Encryptor:** round trip, a unique IV per value, tamper detection, a wrong key, and a missing key returning 503.
-- **Credential resolution:**
-  - each role gets its own set
-  - fallback to `DEFAULT`
-  - MQTT and REST resolve independently
-  - nothing resolves → 404
-  - mobile responses contain no REST credentials
-- **REST proxy** (with a mock upstream such as `MockWebServer`):
-  - Allowlist enforcement: unknown endpoint → 404, wrong method → 405, role scoping → 403.
-  - Subpath traversal is rejected.
-  - Query strings and bodies are forwarded.
-  - The caller's `Authorization` header is never forwarded, and upstream auth is added for each auth type.
-  - OAuth2 tokens are cached.
-  - Upstream 401/403 → 502, timeout → 504, oversized responses are rejected.
-  - Header allowlists apply in both directions.
-- **Services and controllers:**
-  - role-scoped ACLs
-  - ETX-shaped DTO keys
-  - ETX delegation and v2/v3 parity
-  - 403 for a USER calling admin endpoints
-  - 404 for NMI credentials
-  - masked admin views
-  - `no-store` on the credentials endpoint
-  - credential request bodies are not saved to `error_logs`
-- **Migration:** a SQL test under `migrations/tests/` in the style of 009, covering idempotency, constraints (including the unique `(provider_id, credential_role)`), and that seeds don't overwrite edits.
-
-**Local integration testing** on the docker-compose stack:
-
-- The migration applies cleanly.
-- Full admin and mobile flows work with `USER` and `DEPOSITOR` tokens.
-- The proxy works against AV, or a stub if AV is unavailable.
-- v2 regression checks pass.
-- The `generateOpenApiDocs` output lists both v2 and v3 paths.
-- MQTT smoke tests pass against the AV and NMI production brokers.
-- The results are recorded on the ticket.
-
-## 17. Implementation plan
-
-The work is split into stacked PRs that can each be reviewed on their own. Each PR includes its own tests and docs and leaves v2 untouched.
-
-```
-develop ─┬─ 1 credential encryption ───────────────────┐
-         ├─ 2 topic template validator + variables ─┐  │
-         ├─ 3 DB migration 010 ─────────────────────┴─ 4 provider domain + admin API ─┬─ 5 role-based credentials (needs 1) ─┬─ 7 REST proxy ─┐
-         │                                                                             └─ 6 mobile v3 endpoints ───────────────┴────────────────┴─ 8 docs / OpenAPI
-         └─ 9 (optional) make AclRulesFilter constants configurable
-```
-
-| # | Scope |
-|---|---|
-| 1 | AES-GCM encryptor, JPA converter, key configuration, 503 handling |
-| 2 | Topic template validator, `{name}` resolver, env/yml defaults for topic variables |
-| 3 | Migration 010 (including `credential_role` and REST endpoint `allowed_methods`/`roles`), `init-db.sql`, migration README, SQL test |
-| 4 | Entities and repositories; admin CRUD for providers, REST endpoints, ACL rules and topic variables |
-| 5 | Role-based credential sets and resolution; masked admin endpoints; mobile MQTT credentials endpoint; redaction of credential bodies from `error_logs` |
-| 6 | `GET /prd/v3/providers` and `/acl-rules`, ETX delegation, role scoping, v2/v3 parity test |
-| 7 | REST proxy: allowlist and routing, upstream auth (including the OAuth2 token cache), header and size handling, error mapping, proxy configuration |
-| 8 | Regenerated OpenAPI, README section, AV enable runbook |
-| 9 | Optional: move `AclRulesFilter.ALLOWED_FORMATS` and `PUBLIC_VENDOR` into `EtxProperties` |
-
-Prototype branches already exist for PRs 1–3: `feature/provider-credential-encryption`, `feature/geohash-topic-template-validator` and `feature/mqtt-providers-schema`. Once this design is approved they will be updated to match it. PR 3 in particular needs the credential-role and REST-endpoint columns added.
+PRs 1–3 are independent of each other. PR 4 depends on 2 and 3, PR 5 on 1 and 4, PR 6 on 4, and PR 7 on 5.
