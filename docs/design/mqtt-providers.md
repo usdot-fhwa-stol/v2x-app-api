@@ -160,6 +160,74 @@ These are open to `USER`, `DEPOSITOR` and `ADMIN`.
 | *varies* | `/prd/v3/providers/{key}/rest/{endpoint}/…` | REST proxy ([section 6](#6-rest-proxy)). |
 
 <details>
+<summary>Example: <code>GET /prd/v3/providers</code></summary>
+
+Null fields are left out. `credentialsPath` appears only when MQTT credentials exist for the caller's role. `rest.endpoints` lists only the proxy endpoints the caller may use. The `tim` endpoint is illustrative: the real endpoints will come from AV's OpenAPI spec.
+
+```json
+[
+    {
+        "key": "etx",
+        "type": "ETX",
+        "displayName": "ETX",
+        "enabled": true,
+        "priority": 0,
+        "mqtt": { "connectionSource": "ETX_CONNECTION", "authType": "ETX_CERT" },
+        "payloadFormat": "GEO_ROUTED_PROTO_UNSIGNED_UPER",
+        "aclRulesPath": "/prd/v3/providers/etx/acl-rules"
+    },
+    {
+        "key": "nmi",
+        "type": "NMI",
+        "displayName": "OmniTrust National Mobility Interchange",
+        "enabled": true,
+        "priority": 10,
+        "mqtt": { "connectionSource": "STATIC", "host": "mqtt.us.mobilityinterchange.com", "protocol": "tcp", "port": 1883, "tls": false },
+        "payloadFormat": "IEEE1609_2_SIGNED_UPER",
+        "aclRulesPath": "/prd/v3/providers/nmi/acl-rules"
+    },
+    {
+        "key": "av",
+        "type": "AV",
+        "displayName": "AV",
+        "enabled": true,
+        "priority": 20,
+        "mqtt": { "connectionSource": "STATIC", "host": "v2x.aitoms.net", "protocol": "tcp", "port": 1883, "tls": false, "authType": "USERNAME_PASSWORD" },
+        "rest": {
+            "endpoints": {
+                "tim": { "path": "/prd/v3/providers/av/rest/tim", "methods": ["GET"] }
+            }
+        },
+        "payloadFormat": "UNSIGNED_UPER",
+        "aclRulesPath": "/prd/v3/providers/av/acl-rules",
+        "credentialsPath": "/prd/v3/providers/av/credentials"
+    }
+]
+```
+</details>
+
+<details>
+<summary>Example: <code>GET /prd/v3/providers/nmi/acl-rules</code></summary>
+
+```json
+[
+    {
+        "name": "nmi.mobile.default",
+        "subscribeLimit": 36,
+        "publishRateLimit": 10,
+        "geohash": { "symbol": "@", "levels": 7, "publishPrecision": 7, "subscribePrecision": 7, "subscribeGridRadius": 1 },
+        "publish": [
+            "v1/g32/@/20|32"
+        ],
+        "subscribe": [
+            "v1/g32/@/31|19|18|41"
+        ]
+    }
+]
+```
+</details>
+
+<details>
 <summary>Example: <code>GET /prd/v3/providers/av/acl-rules</code></summary>
 
 ```json
@@ -183,6 +251,21 @@ These are open to `USER`, `DEPOSITOR` and `ADMIN`.
         ]
     }
 ]
+```
+</details>
+
+<details>
+<summary>Example: <code>GET /prd/v3/providers/av/credentials</code></summary>
+
+`credentialRole` shows which role's credential set was selected. This response contains MQTT credentials only. REST credentials never leave the server.
+
+```json
+{
+    "provider": "av",
+    "credentialRole": "DEPOSITOR",
+    "mqtt": { "username": "…", "password": "…" },
+    "updatedAt": "2026-11-10T12:00:00Z"
+}
 ```
 </details>
 
