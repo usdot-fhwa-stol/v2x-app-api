@@ -8,14 +8,15 @@
 
 ## 1. Background
 
-The mobile app works with two MQTT brokers today, and it learns about them in different ways:
+The mobile app works with three MQTT brokers today, and it learns about each one in a different way:
 
 - **ETX/Thingspace** is configured through v2x-app-api:
   - `POST /prd/v2/connection` returns the broker URL.
   - `GET /prd/v2/acl-rules` returns the topic permissions.
 - **NMI** (National Mobility Interchange) is **hardcoded in the app**: host, port, topic layout and payload format. Changing any of these requires a new app build.
+- **Ettifos OBU** (the broker embedded in an Ettifos on-board unit) is **configured in the app's settings**: the user enters the address of their OBU, typically an IP.
 
-**AV** is a new broker that must be added. It differs from the other two:
+**AV** is a new broker that must be added. It differs from the existing ones:
 
 - MQTT connections need a username and password.
 - The app needs TIM data from AV's REST API, which requires credentials that must not be placed on devices.
@@ -28,6 +29,12 @@ The mobile app works with two MQTT brokers today, and it learns about them in di
 | Topics | ETX ACL rules | `v1/g32/{geohash path}/{messageId}` | `{MSG}/unsigned/J2735/{agency}/{geohash path}`, and `TIM/unsigned/J2735/{geohash path}` for TIM |
 | Payload | Geo-routed proto, unsigned UPER | IEEE 1609.2 signed UPER | Unsigned UPER |
 | REST API | Proxied by v2x-app-api (Thingspace) | None | TIM REST API, to be **proxied by v2x-app-api** |
+
+**Ettifos OBU stays configured in the app.** Each phone may connect to a different OBU, so its address belongs to the device, not the API. If we later want the OBU's shared settings managed centrally, it can become a provider with a `DEVICE` connection source:
+- The shared settings would come from the API: port, protocol, topics and payload format.
+- The host would still come from the app's settings.
+
+This is not part of phase 1.
 
 ## 2. Goals
 
@@ -114,7 +121,12 @@ ACL topics use the existing **ETX ACL syntax**, so the app's current ACL handlin
 
 ### 4.2 Geohash expansion in the app
 
-Each rule includes the settings the app needs to expand `@`: number of levels (7), publish and subscribe precision (7), and subscribe grid radius (1, which gives a 3×3 grid).
+Each rule includes the settings the app needs to expand `@`:
+- number of levels (7)
+- publish and subscribe precision (7)
+- subscribe grid radius (1, which gives a 3×3 grid)
+
+A single `@` expands to as many levels as the rule specifies. A broker that uses a different geohash depth or precision therefore only needs different rule settings in the API, with no app change and no change to the template syntax.
 
 - **Publish:**
   - Take the geohash of the event location and put one character in each level.
@@ -422,6 +434,8 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
 | Generic open proxy | SSRF risk. Only admin-configured endpoints are reachable. |
 | One agency list shared by publish and subscribe | Can't receive from an agency without also publishing to it. Separate lists cost one extra variable. |
 | One agency per deployment | Doesn't support DDOT and Raven together. Multi-value variables reuse the existing `\|` expansion. |
+| One `@` per geohash level (`@/@/@/@/@/@/@`) | The rule's `levels` and precision settings already control the depth. Repeating the token would duplicate that setting and give the parser more to validate. |
+| Serve the Ettifos OBU address from the API | Each device may pair with a different OBU, so the address is device-specific. Shared OBU settings could be added later with a `DEVICE` connection source. |
 | Structured topic fields instead of templates | Would need a new parser in the app. Templates reuse the existing ACL handling. |
 
 ## 12. Implementation plan
