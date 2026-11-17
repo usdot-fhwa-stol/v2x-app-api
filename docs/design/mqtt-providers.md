@@ -19,7 +19,7 @@ The mobile app works with two MQTT brokers today, and it learns about them in di
 
 - MQTT connections need a username and password.
 - The app needs TIM data from AV's REST API, which requires credentials that must not be placed on devices.
-- Topics include an agency level. There is more than one agency (`DDOT`, `Raven`), and the list must be changeable without an app release.
+- Topics include an agency level. There is more than one agency (`DDOT`, `Raven`). The agencies the app publishes to and subscribes to must each be changeable without an app release.
 
 | | ETX | NMI (existing, hardcoded) | AV (new) |
 |---|---|---|---|
@@ -93,15 +93,30 @@ ACL topics use the existing **ETX ACL syntax**, so the app's current ACL handlin
 |---|---|---|
 | `\|`, `+`, `*`, `#` | Unchanged from ETX: alternatives within a level, and wildcards. | App or broker |
 | **`@`** *(new)* | Geohash path. It fills a whole topic level and expands into one level per geohash character. | App |
-| **`{name}`** *(new)* | Topic variable, such as `{agency}`. It fills a whole level and is replaced by its configured value or values. | API, before responding |
+| **`{name}`** *(new)* | Topic variable, such as `{subscribeAgency}`. It fills a whole level and is replaced by its configured value or values. | API, before responding |
 
 ### 4.1 Topic variables and multiple agencies
 
-- A variable holds **one or more values**. When there are several, the API joins them with `|`, so the app expands them as ordinary ETX alternatives. For example, with agencies `DDOT` and `Raven`:
-  - Template: `MAP/unsigned/J2735/{agency}/@`
-  - Returned to the app: `MAP/unsigned/J2735/DDOT|Raven/@`
-  - The app subscribes to every listed agency and publishes each message under every listed agency.
-- **Where values come from:** an admin override in the database takes precedence over the deployment default (`AV_TOPIC_AGENCIES=DDOT,Raven`).
+- A variable holds **one or more values**. When there are several, the API joins them with `|`, so the app expands them as ordinary ETX alternatives.
+- **AV publish and subscribe agencies are configured separately:**
+  - Publish templates use `{publishAgency}`.
+  - Subscribe templates use `{subscribeAgency}`.
+
+  This lets the app, for example, receive from both agencies while publishing to only one.
+
+| | Publish agencies | Subscribe agencies |
+|---|---|---|
+| Variable | `{publishAgency}` | `{subscribeAgency}` |
+| Environment default | `AV_PUBLISH_AGENCIES=DDOT,Raven` | `AV_SUBSCRIBE_AGENCIES=DDOT,Raven` |
+| Admin override | `PUT /prd/v3/admin/providers/av/topic-variables/publishAgency` with `["DDOT"]` | `PUT /prd/v3/admin/providers/av/topic-variables/subscribeAgency` with `["DDOT", "Raven"]` |
+| Example template | `PSM/unsigned/J2735/{publishAgency}/@` | `MAP/unsigned/J2735/{subscribeAgency}/@` |
+| Returned to the app (with the overrides above) | `PSM/unsigned/J2735/DDOT/@` | `MAP/unsigned/J2735/DDOT\|Raven/@` |
+
+- **Where values come from:**
+  - An admin override set through the API takes effect immediately, with no redeploy.
+  - Otherwise the environment default applies.
+  - Deleting an override reverts to the environment default.
+- The app publishes each message under every agency in the publish list, and subscribes to every agency in the subscribe list.
 - **Allowed values:** each value must be a literal topic level, with no separators, wildcards, `|`, braces or `@`. Values are case-sensitive and must match AV's topics exactly.
 - **Consistency is enforced on writes:**
   - A rule can't reference a variable that has no values.
@@ -359,7 +374,7 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
 | `mqtt_providers` | Key, type, priority, enabled flag, MQTT connection, payload format, REST base URL and auth type |
 | `mqtt_provider_rest_endpoints` | Proxy allowlist: name, upstream path, allowed methods, roles |
 | `mqtt_provider_acl_rules` and topic child tables | Limits, geohash settings, role scoping, publish and subscribe templates |
-| `mqtt_provider_topic_variables` | Admin overrides: an ordered list of values per variable (for example `agency` → `DDOT`, `Raven`) |
+| `mqtt_provider_topic_variables` | Admin overrides: an ordered list of values per variable (for example `subscribeAgency` → `DDOT`, `Raven`) |
 | `mqtt_provider_credentials` | One row per (provider, role), with encrypted secrets |
 | `j2735_message_ids` | Reference mapping of message types to the IDs used in NMI topics (BSM 20, PSM 32, TIM 31, SPAT 19, MAP 18, SDSM 41) |
 
@@ -373,7 +388,7 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
 ## 9. Rollout (Leidos VM)
 
 1. Back up the database.
-2. Add the encryption key and the agency defaults to the environment.
+2. Add the encryption key and the default publish and subscribe agency lists to the environment.
 3. Deploy the image and apply migration 010.
 4. As an admin:
    1. Configure the AV REST endpoints.
@@ -381,7 +396,7 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
    3. Enable AV.
 5. Verify:
    - The provider list is correct.
-   - The ACL rules include both agencies.
+   - The ACL rules reflect the configured publish and subscribe agencies.
    - `USER` and `DEPOSITOR` tokens each receive their own credential set.
    - The proxy returns AV data.
    - Only ciphertext is stored in the database.
@@ -418,6 +433,7 @@ The new tables are added by migration `010_add_mqtt_providers.sql`, following th
 | External secrets manager | None exists in the current deployments. The encryption code is isolated, so it can be swapped in later. |
 | App calls AV REST directly | Puts a long-lived REST secret on every device, and ties the app to AV's API. Rejected in review. |
 | Generic open proxy | SSRF risk. Only admin-configured endpoints are reachable. |
+| One agency list shared by publish and subscribe | Can't receive from an agency without also publishing to it. Separate lists cost one extra variable. |
 | One agency per deployment | Doesn't support DDOT and Raven together. Multi-value variables reuse the existing `\|` expansion. |
 | Structured topic fields instead of templates | Would need a new parser in the app. Templates reuse the existing ACL handling. |
 
