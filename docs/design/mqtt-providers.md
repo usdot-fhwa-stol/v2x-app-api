@@ -30,13 +30,13 @@ The mobile app works with three MQTT brokers today, and it learns about each one
 | Payload | Geo-routed proto, unsigned UPER | IEEE 1609.2 signed UPER | Unsigned UPER |
 | REST API | Proxied by v2x-app-api (Thingspace) | None | TIM REST API, to be **proxied by v2x-app-api** |
 
-**Providers served by v2x-app-api in phase 1: ETX/Thingspace, NMI and AV.**
+**Providers served by v2x-app-api: ETX/Thingspace, NMI and AV.**
 
 **The Ettifos OBU connection stays configured only in the mobile app.** Each phone may connect to a different OBU, so its address belongs to the device, not the API. If we later want the OBU's shared settings managed centrally, it can become a provider with a `DEVICE` connection source:
 - The shared settings would come from the API: port, protocol, topics and payload format.
 - The host would still come from the app's settings.
 
-This is not part of phase 1.
+This is a possible future addition and is not included in this design.
 
 ## 2. Goals
 
@@ -366,7 +366,7 @@ v2x-app-api already sits between the app and Thingspace. The AV proxy follows th
 
 - **Encrypted at rest** with AES-256-GCM, using a random IV per value and a key version prefix. The key comes from the environment (`PROVIDER_CREDENTIALS_ENCRYPTION_KEY`) and is never committed.
 - **If the key is missing or wrong,** the application still starts. The credential and proxy features return 503, and the rest of the API is unaffected.
-- **Key rotation** is a manual procedure in phase 1, used when the key may have been exposed, someone with access to it leaves, or policy requires it:
+- **Key rotation** is a manual procedure, used when the key may have been exposed, someone with access to it leaves, or policy requires it:
   1. Read the current credentials through the admin API.
   2. Change the key and bump the version, then redeploy.
   3. Re-enter the credentials.
