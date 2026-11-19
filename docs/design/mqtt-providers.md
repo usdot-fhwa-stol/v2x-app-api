@@ -30,7 +30,9 @@ The mobile app works with three MQTT brokers today, and it learns about each one
 | Payload | Geo-routed proto, unsigned UPER | IEEE 1609.2 signed UPER | Unsigned UPER |
 | REST API | Proxied by v2x-app-api (Thingspace) | None | TIM REST API, to be **proxied by v2x-app-api** |
 
-**Ettifos OBU stays configured in the app.** Each phone may connect to a different OBU, so its address belongs to the device, not the API. If we later want the OBU's shared settings managed centrally, it can become a provider with a `DEVICE` connection source:
+**Providers served by v2x-app-api in phase 1: ETX/Thingspace, NMI and AV.**
+
+**The Ettifos OBU connection stays configured only in the mobile app.** Each phone may connect to a different OBU, so its address belongs to the device, not the API. If we later want the OBU's shared settings managed centrally, it can become a provider with a `DEVICE` connection source:
 - The shared settings would come from the API: port, protocol, topics and payload format.
 - The host would still come from the app's settings.
 
@@ -71,17 +73,35 @@ flowchart LR
     App -- MQTT --> Brokers
 ```
 
-At startup, the app:
+**What the provider API gives the mobile app:**
 
+| Capability | Endpoint | Used by |
+|---|---|---|
+| Provider list: connection settings and payload format | `GET /prd/v3/providers` | ETX, NMI, AV |
+| ACL rules: the topics the app may publish and subscribe to | `GET /prd/v3/providers/{key}/acl-rules` | ETX, NMI, AV |
+| MQTT credentials for the caller's role | `GET /prd/v3/providers/{key}/credentials` | AV. NMI is anonymous, and ETX uses its certificate. |
+| REST proxy to the provider's REST API | `/prd/v3/providers/{key}/rest/{endpoint}` | AV (TIM) |
+
+**Interactions outside this API:**
+- ETX registration and certificate-based connection keep using the existing v2 endpoints (`/prd/v2/registration` and `/prd/v2/connection`).
+- There are no other provider-specific interactions.
+- MQTT messages never pass through v2x-app-api. The app connects to each provider's broker directly.
+
+**At startup, the app:**
 1. Lists the providers.
-2. Fetches each provider's ACL rules and, where they are needed, its MQTT credentials.
-3. Connects to each broker directly.
-
-TIM REST calls go through the v2x-app-api proxy.
+2. Fetches each provider's ACL rules and, where needed, its MQTT credentials.
+3. Connects to each broker.
 
 ## 4. Topic templates
 
-ACL topics use the existing **ETX ACL syntax**, so the app's current ACL handling still applies. Two tokens are added:
+**Each provider defines its own topic structure on its own broker.** v2x-app-api does not run or proxy an MQTT broker. Topic templates are how the API describes each provider's real topics to the app:
+- `@` and `{name}` are notation used only in API responses.
+- They are replaced before anything is sent to a broker: the API substitutes `{name}`, and the app expands `@`.
+- Brokers only ever see the provider's real topic names.
+
+For example, the template `MAP/unsigned/J2735/{subscribeAgency}/@` describes AV's real topics, such as `MAP/unsigned/J2735/DDOT/d/p/3/w/j/z/b`.
+
+Templates use the existing **ETX ACL syntax**, so the app's current ACL handling still applies. Two tokens are added:
 
 | Token | Meaning | Expanded by |
 |---|---|---|
