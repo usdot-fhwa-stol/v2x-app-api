@@ -179,6 +179,44 @@ services:
       postgres:
         condition: service_started
 
+  # Forwards J2735 messages from an MQTT broker to an ODE's UDP receivers.
+  # Not part of the "all" profile: start it with --profile mqtt-ode-bridge.
+  mqtt-ode-bridge:
+    profiles:
+      - mqtt-ode-bridge
+    image: v2x-mqtt-ode-bridge:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.mqtt_ode_bridge
+    restart: ${RESTART_POLICY:-no}
+    networks:
+      - v2x-api-network
+    environment:
+      MQTT_HOST: ${MQTT_HOST:-}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_TLS: ${MQTT_TLS:-false}
+      MQTT_TLS_INSECURE: ${MQTT_TLS_INSECURE:-false}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-}
+      MQTT_TOPICS: ${MQTT_TOPICS:-MAP/unsigned/J2735/#,SPAT/unsigned/J2735/#,BSM/unsigned/J2735/#,PSM/unsigned/J2735/#,TIM/unsigned/J2735/#}
+      ODE_HOST: ${ODE_HOST:-}
+      ODE_MAP_PORT: ${ODE_MAP_PORT:-44920}
+      ODE_SPAT_PORT: ${ODE_SPAT_PORT:-44910}
+      ODE_BSM_PORT: ${ODE_BSM_PORT:-46800}
+      ODE_PSM_PORT: ${ODE_PSM_PORT:-44940}
+      ODE_TIM_PORT: ${ODE_TIM_PORT:-47900}
+      ODE_USE_GENERIC_PORT: ${ODE_USE_GENERIC_PORT:-false}
+      ODE_GENERIC_PORT: ${ODE_GENERIC_PORT:-44990}
+      ODE_ROUTES: ${ODE_ROUTES:-}
+      FORWARD_RETAINED: ${FORWARD_RETAINED:-false}
+      DRY_RUN: ${MQTT_ODE_BRIDGE_DRY_RUN:-false}
+      STATS_INTERVAL: ${MQTT_ODE_BRIDGE_STATS_INTERVAL:-60}
+      LOG_LEVEL: ${MQTT_ODE_BRIDGE_LOG_LEVEL:-INFO}
+    logging:
+      options:
+        max-size: "10m"
+
 volumes:
   postgres_data:
 
