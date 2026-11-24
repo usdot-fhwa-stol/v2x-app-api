@@ -1,0 +1,2 @@
+# Dependencies for mqtt_map_spat_hex.py
+paho-mqtt>=2.0,<3

@@ -171,3 +171,5 @@ cython_debug/
 **/acme
 **/logs
 **/nginx
+
+/cvmanager_upload
