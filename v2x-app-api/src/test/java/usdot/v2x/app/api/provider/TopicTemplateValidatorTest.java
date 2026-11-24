@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,15 +22,19 @@ class TopicTemplateValidatorTest {
     private static final List<String> NMI_SUBSCRIBE = List.of("v1/g32/@/31|19|18|41");
 
     private static final List<String> AV_PUBLISH = List.of(
-            "PSM/unsigned/J2735/DDOT/@",
-            "BSM/unsigned/J2735/DDOT/@");
+            "PSM/unsigned/J2735/{publishAgency}/@",
+            "BSM/unsigned/J2735/{publishAgency}/@");
     private static final List<String> AV_SUBSCRIBE = List.of(
-            "PSM/unsigned/J2735/DDOT/@",
-            "BSM/unsigned/J2735/DDOT/@",
-            "SDSM/unsigned/J2735/DDOT/@",
-            "SPAT/unsigned/J2735/DDOT/@",
-            "MAP/unsigned/J2735/DDOT/@",
+            "PSM/unsigned/J2735/{subscribeAgency}/@",
+            "BSM/unsigned/J2735/{subscribeAgency}/@",
+            "SDSM/unsigned/J2735/{subscribeAgency}/@",
+            "SPAT/unsigned/J2735/{subscribeAgency}/@",
+            "MAP/unsigned/J2735/{subscribeAgency}/@",
             "TIM/unsigned/J2735/@");
+    /** Default AV agencies: publish to DDOT, subscribe to DDOT and Raven. */
+    private static final Map<String, List<String>> AV_DEFAULTS = Map.of(
+            "publishAgency", List.of("DDOT"),
+            "subscribeAgency", List.of("DDOT", "Raven"));
 
     @Test
     void defaultSpecMatchesAgreedSubscribeBehaviour() {
@@ -48,7 +53,36 @@ class TopicTemplateValidatorTest {
 
     @Test
     void acceptsAvRuleWithTrailingGeohash() {
-        assertDoesNotThrow(() -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 54));
+        // (5 topics x 2 subscribe agencies + TIM) x 9 cells = 99
+        assertDoesNotThrow(
+                () -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 99, AV_DEFAULTS));
+    }
+
+    @Test
+    void subscribeLimitFollowsTheResolvedAgencyCount() {
+        Map<String, List<String>> oneAgency = Map.of(
+                "publishAgency", List.of("DDOT"),
+                "subscribeAgency", List.of("DDOT"));
+
+        assertDoesNotThrow(
+                () -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 54, oneAgency));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 54, AV_DEFAULTS));
+        assertTrue(e.getMessage().contains("99"));
+    }
+
+    @Test
+    void ruleWithUnresolvedVariableIsRejected() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 99,
+                        Map.of("subscribeAgency", List.of("DDOT", "Raven"))));
+        assertTrue(e.getMessage().contains("publishAgency"));
+    }
+
+    @Test
+    void ruleWithoutVariablesNeedsNoValues() {
+        assertDoesNotThrow(
+                () -> TopicTemplateValidator.validateRule(NMI_PUBLISH, NMI_SUBSCRIBE, DEFAULT_SPEC, 36, Map.of()));
     }
 
     @ParameterizedTest
@@ -58,6 +92,8 @@ class TopicTemplateValidatorTest {
             "v1/g32/@/+",
             "TIM/unsigned/J2735/@",
             "BSM/unsigned/J2735/DDOT/@",
+            "BSM/unsigned/J2735/{agency}/@",
+            "{prefix}/g32/@/{agency_2}",
             "vzimp/1/GeoRelevance/*/*/Public/j2735_gr|j2735/BSM|TIM/*",
             "#"
     })
@@ -78,6 +114,12 @@ class TopicTemplateValidatorTest {
             "v1/g32/@/20/",
             "v1//g32/@/20",
             " v1/g32/@/20",
+            "BSM/unsigned/J2735/{agency/@",
+            "BSM/unsigned/J2735/agency}/@",
+            "BSM/unsigned/J2735/x{agency}/@",
+            "BSM/unsigned/J2735/{}/@",
+            "BSM/unsigned/J2735/{1agency}/@",
+            "BSM/unsigned/J2735/{agency}|DDOT/@",
             ""
     })
     void rejectsInvalidSubscribeTopics(String topic) {
@@ -149,8 +191,39 @@ class TopicTemplateValidatorTest {
         assertTrue(nmi.getMessage().contains("36"));
 
         IllegalArgumentException av = assertThrows(IllegalArgumentException.class,
-                () -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 53));
-        assertTrue(av.getMessage().contains("54"));
+                () -> TopicTemplateValidator.validateRule(AV_PUBLISH, AV_SUBSCRIBE, DEFAULT_SPEC, 98, AV_DEFAULTS));
+        assertTrue(av.getMessage().contains("99"));
+    }
+
+    @Test
+    void acceptsPlaceholderInPublishTopic() {
+        assertDoesNotThrow(() -> TopicTemplateValidator.validatePublishTopic("BSM/unsigned/J2735/{agency}/@",
+                DEFAULT_SPEC));
+    }
+
+    @Test
+    void placeholderLevelsCountOnce() {
+        assertEquals(9, TopicTemplateValidator.expandedSubscriptionCount(
+                List.of("TIM/unsigned/J2735/{agency}/@"), DEFAULT_SPEC));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "DDOT", "MDOT", "agency-1", "a_b" })
+    void acceptsLiteralVariableValues(String value) {
+        assertDoesNotThrow(() -> TopicTemplateValidator.validateVariableValue("agency", value, DEFAULT_SPEC));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "", " ", " DDOT", "DD/OT", "DDOT|MDOT", "+", "#", "*", "{x}", "D@T" })
+    void rejectsNonLiteralVariableValues(String value) {
+        assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateVariableValue("agency", value, DEFAULT_SPEC));
+    }
+
+    @Test
+    void rejectsNullVariableValue() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateVariableValue("agency", null, DEFAULT_SPEC));
     }
 
     @Test
@@ -162,6 +235,8 @@ class TopicTemplateValidatorTest {
                 () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("+", 7, 7, 7, 1)));
         assertThrows(IllegalArgumentException.class,
                 () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("a/b", 7, 7, 7, 1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("{", 7, 7, 7, 1)));
         assertThrows(IllegalArgumentException.class,
                 () -> TopicTemplateValidator.validateSpec(new GeohashTopicSpec("@", 0, 1, 1, 1)));
         assertThrows(IllegalArgumentException.class,
