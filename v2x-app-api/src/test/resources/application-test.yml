@@ -31,3 +31,9 @@ secret:
     destination: ${S3_DESTINATION:destination}
   mapbox-access-token: ${MAPBOX_ACCESS_TOKEN:mapbox_access_token}
   noaa-geomag-api-token: ${NOAA_GEOMAG_API_TOKEN:noaa-geomag-api-token}
+
+provider:
+  credentials:
+    # Fixed test-only key (base64 of "0123456789abcdef0123456789abcdef"). Never use outside tests.
+    encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    key-version: 1
