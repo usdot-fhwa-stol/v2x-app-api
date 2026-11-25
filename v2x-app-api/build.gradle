@@ -99,6 +99,25 @@ dependencies {
     implementation 'usdot.jpo.ode:j2735-2024-ffm-lib'
 }
 
+// Downloads the external dependencies needed by `gradle build -x test` without
+// compiling anything. The Dockerfile runs this before copying src/ so the
+// dependency layer is cached and source-only changes don't hit remote repos.
+tasks.register('resolveDependencies') {
+    group = 'build setup'
+    description = 'Downloads external dependencies for the main build (used for Docker layer caching).'
+    def classpaths = ['annotationProcessor', 'compileClasspath', 'runtimeClasspath', 'productionRuntimeClasspath']
+            .collect { configurations.findByName(it) }
+            .findAll { it != null }
+    doLast {
+        classpaths.each { cfg ->
+            // Skip included-build (project) components; only remote modules need downloading.
+            cfg.incoming.artifactView {
+                componentFilter { it instanceof ModuleComponentIdentifier }
+            }.files.files
+        }
+    }
+}
+
 test {
     useJUnitPlatform()
     
