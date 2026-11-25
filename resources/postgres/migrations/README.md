@@ -5,9 +5,9 @@ expects.
 
 ## When to apply migrations
 
-- **New databases** need no migrations for 001–008.
-  [`../init-db.sql`](../init-db.sql) already contains everything from 001–008,
-  plus the `error_logs` table, which has no migration. Docker runs `init-db.sql`
+- **New databases** need no migrations for 001–008 or 010.
+  [`../init-db.sql`](../init-db.sql) already contains everything from 001–008
+  and 010, plus the `error_logs` table, which has no migration. Docker runs `init-db.sql`
   only when the PostgreSQL volume is first initialized.
 - **Existing databases** need every migration that was added after the database
   was created. Apply them before restarting the API on the new version.
@@ -42,6 +42,7 @@ docker compose exec -T postgres sh -c \
 | 007 | `007_set_existing_msg_type.sql` | `message_types` table, `geofence_deployments.msg_type` | Yes |
 | 008 | `008_setup_listen_notify.sql` | `table_updates` notification triggers | Yes |
 | 009 | `009_user_limits_username_vendor_uniqueness.sql` | `(username, vendor_id)` uniqueness on `user_limits` | Yes (transactional) |
+| 010 | `010_add_mqtt_providers.sql` | `mqtt_providers` and child tables, per-role `mqtt_provider_credentials`, `j2735_message_ids`, ETX/NMI/AV seeds | Yes (transactional) |
 
 "No" means that a second run fails on a plain `CREATE TRIGGER`. The tables and
 indexes use `IF NOT EXISTS`, so before you re-run one of these scripts, check
@@ -189,4 +190,96 @@ Temporary tables shadow any real tables for that connection only:
 ```bash
 psql -X -v ON_ERROR_STOP=1 --dbname=test_database \
   -f resources/postgres/migrations/tests/009_user_limits_username_vendor_uniqueness_test.sql
+```
+
+## 010_add_mqtt_providers.sql
+
+Adds the MQTT provider configuration that the mobile app pulls at runtime from
+the `/prd/v3/providers` endpoints:
+
+- `mqtt_providers`: one row per broker. It holds:
+  - key, display name, type and priority;
+  - how to connect: `connection_source` (`STATIC` host/protocol/port, or
+    `ETX_CONNECTION`, meaning the app keeps using `POST /prd/v2/connection`);
+  - TLS, MQTT auth type and payload format;
+  - optional REST base URL and auth type.
+
+  An enabled `STATIC` provider must have a host, protocol and port.
+- `mqtt_provider_rest_endpoints`: the REST proxy allowlist. Each row is a named
+  path relative to the provider's REST base URL (for example `tim` → `/tims`),
+  with the HTTP methods the proxy forwards (`allowed_methods`, default `GET`)
+  and optional role scoping (`roles`, `NULL` = every role). None are seeded;
+  they are configured from the provider's API spec.
+- `mqtt_provider_acl_rules`: ETX-shaped ACL rules (`subscribe_limit`,
+  `publish_rate_limit`), plus the geohash expansion settings for the `@` topic
+  token: levels, publish and subscribe precision, and subscribe grid radius
+  (1 = 3×3 grid). It also has optional role scoping. Topics are kept in order in
+  `mqtt_provider_acl_publish_topics` and `mqtt_provider_acl_subscribe_topics`.
+- `mqtt_provider_topic_variables`: per-provider values for `{name}` topic
+  placeholders, as an ordered list (`value_order`), such as `av` /
+  `subscribeAgency` / `DDOT`, `Raven`. The API substitutes each placeholder
+  before returning the rules, joining several values as `|` alternatives
+  (`DDOT|Raven`), so the app never sees `{subscribeAgency}`.
+  - Values here override the API's env/yml defaults
+    (`mqtt.topic-variables.<provider>.<name>`): `AV_PUBLISH_AGENCIES`
+    (default `DDOT`) and `AV_SUBSCRIBE_AGENCIES` (default `DDOT,Raven`).
+  - Each value must be a single literal topic level, and a variable can't list
+    the same value twice (both are checked).
+  - No values are seeded, so the env defaults apply until an admin sets them.
+- `mqtt_provider_credentials`: one credential set per provider and role
+  (`credential_role` is `USER`, `DEPOSITOR` or `ADMIN`). The API picks the
+  caller's set in the order `ADMIN` → `DEPOSITOR` → `USER`. MQTT credentials
+  are returned to the app; REST credentials are used only by the server-side
+  REST proxy. Secret columns (`*_enc`) hold AES-256-GCM ciphertext written by
+  the API. They are never seeded.
+- `j2735_message_ids`: J2735 `DSRCmsgID` values used in NMI topics: MAP 18,
+  SPAT 19, BSM 20, TIM 31, PSM 32 and SDSM 41. This is a separate table from
+  `message_types`, because `message_types` is the foreign-key domain for
+  deposit `msg_type`, and adding rows there would change which deposits are
+  accepted.
+
+Seeds:
+
+| Provider | Enabled | Connection | Default ACL rule |
+| --- | --- | --- | --- |
+| `etx` | yes | `ETX_CONNECTION` | none (rules come from ETX) |
+| `nmi` | yes | `tcp://mqtt.us.mobilityinterchange.com:1883`, anonymous | `nmi.mobile.default`: publish `v1/g32/@/20\|32`, subscribe `v1/g32/@/31\|19\|18\|41`, limit 36 |
+| `av` | **no** | `tcp://v2x.aitoms.net:1883`, username/password | `av.mobile.default`: publish PSM and BSM (`{MSG}/unsigned/J2735/{publishAgency}/@`), subscribe PSM, BSM, SDSM, SPAT and MAP (`{MSG}/unsigned/J2735/{subscribeAgency}/@`) and `TIM/unsigned/J2735/@`, limit 99 |
+
+AV's limit of 99 is (5 topics × 2 default subscribe agencies + TIM) × 9 grid
+cells. AV stays disabled, with no REST endpoints or REST auth type, until an
+admin configures them from AV's API spec, enters credentials and then enables
+it.
+
+Child rows (rules and topics) are inserted only when their
+provider row is created. Re-running the script therefore never overwrites or
+restores anything an admin has changed. The script manages its own
+transaction:
+
+```bash
+docker compose exec -T postgres sh -c 'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < resources/postgres/migrations/010_add_mqtt_providers.sql
+```
+
+### Test
+
+[`tests/010_add_mqtt_providers_test.sql`](tests/010_add_mqtt_providers_test.sql)
+applies the migration twice and checks:
+
+- the seeds;
+- that a re-run keeps admin edits and deletions;
+- that the `updated_at` trigger fires;
+- the REST endpoint method, role, name and path checks;
+- one credential set per provider and role;
+- that topic-variable values are ordered, unique and literal levels;
+- the check, unique and cascade constraints.
+
+Migration 010 creates real tables, so run the test against a throwaway
+database:
+
+```bash
+createdb mqtt_providers_test
+psql -X -v ON_ERROR_STOP=1 --dbname=mqtt_providers_test \
+  -f resources/postgres/migrations/tests/010_add_mqtt_providers_test.sql
+dropdb mqtt_providers_test
 ```
